@@ -1,0 +1,1722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipework Sizer — Multi-Circuit</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;600;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --brand-blue: #7ad1e4;
+    --brand-blue-deep: #1a5670;
+    --brand-blue-dark: #0b2a38;
+    --black: #0a0a0a;
+    --ink: #14181c;
+    --ink-soft: #2a333c;
+    --white: #ffffff;
+    --off-white: #f7f9fa;
+    --line: #d9dee2;
+    --line-strong: #b4bcc2;
+    --muted: #4a5864;
+    --warn: #c74418;
+    --ok: #1f7a4c;
+    --amber: #b37800;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--off-white);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-weight: 400;
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ===== HEADER ===== */
+  header {
+    background: var(--black);
+    color: var(--white);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    border-bottom: 3px solid var(--brand-blue);
+  }
+
+  header .brand-mark {
+    width: 38px; height: 38px;
+    background: var(--brand-blue);
+    display: grid; place-items: center;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 900; font-size: 20px;
+    color: var(--black); letter-spacing: -1px;
+  }
+
+  header .title-block h1 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700; font-size: 22px;
+    letter-spacing: 0.5px; text-transform: uppercase; line-height: 1;
+  }
+
+  header .title-block .sub {
+    font-size: 11px; color: var(--brand-blue);
+    letter-spacing: 3px; text-transform: uppercase;
+    margin-top: 4px; font-weight: 500;
+  }
+
+  header .eq {
+    margin-left: auto;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 16px; color: rgba(255,255,255,0.6);
+    letter-spacing: 1.5px; font-weight: 300;
+  }
+
+  header .limit-badge {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    background: var(--brand-blue); color: var(--black);
+    padding: 6px 14px; border-radius: 2px;
+  }
+
+  /* ===== LAYOUT ===== */
+  main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px 28px;
+  }
+
+  .top-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+
+  @media (max-width: 900px) {
+    .top-grid { grid-template-columns: 1fr; }
+    main { padding: 16px; }
+    header { padding: 16px; flex-wrap: wrap; gap: 12px; }
+    header .eq { display: none; }
+  }
+
+  /* ========================================================
+     MOBILE: Transform circuits table into stacked cards
+     ======================================================== */
+  @media (max-width: 820px) {
+    /* Header simplifications */
+    header .title-block h1 { font-size: 18px; }
+    header .title-block .sub { font-size: 10px; letter-spacing: 2px; }
+    header .limit-badge { font-size: 10px; padding: 4px 10px; }
+    header .brand-mark { width: 32px; height: 32px; font-size: 16px; }
+
+    /* Stack project bar */
+    .project-bar { flex-direction: column; align-items: stretch; gap: 10px; padding: 14px; }
+    .project-bar .field { min-width: 0; }
+    .toolbar { margin-left: 0; width: 100%; }
+    .toolbar .btn { flex: 1; text-align: center; }
+
+    /* Hide the table structure entirely on mobile */
+    .circuits-wrap { overflow-x: visible; }
+    .circuits-table { min-width: 0; display: block; }
+    .circuits-table thead { display: none; }
+    .circuits-table tbody { display: block; }
+
+    .circuits-table tr {
+      display: block;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 14px;
+      margin-bottom: 14px;
+      position: relative;
+    }
+
+    .circuits-table tr:first-child {
+      /* Empty state row */
+      padding: 24px 14px;
+    }
+
+    .circuits-table td {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 10px;
+      padding: 7px 0;
+      border: none;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    .circuits-table td:not(:last-child) {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .circuits-table td::before {
+      content: attr(data-label);
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+    }
+
+    /* The delete button cell - put it top-right corner */
+    .circuits-table td.td-delete {
+      display: block;
+      position: absolute;
+      top: 10px; right: 10px;
+      padding: 0;
+      border: none;
+    }
+    .circuits-table td.td-delete::before { display: none; }
+
+    /* Reference gets full row treatment as the "title" */
+    .circuits-table td.td-ref {
+      display: block;
+      padding: 0 40px 10px 0;
+      margin-bottom: 8px;
+      border-bottom: 2px solid var(--brand-blue);
+    }
+    .circuits-table td.td-ref::before {
+      display: block;
+      margin-bottom: 4px;
+    }
+    .circuits-table td.td-ref input {
+      font-size: 16px;
+      font-weight: 600;
+      width: 100%;
+    }
+
+    /* Derived cells - highlight as results section */
+    .circuits-table td.derived-cell {
+      background: rgba(122,209,228,0.08);
+      padding: 8px 10px;
+      margin: 0 -8px;
+      border-radius: 3px;
+      font-size: 15px;
+    }
+    .circuits-table td.derived-cell::before {
+      color: var(--brand-blue-deep);
+    }
+
+    .circuits-table td.recommended-cell {
+      background: var(--brand-blue);
+      color: var(--black);
+      padding: 10px;
+      margin: 4px -8px;
+      border-radius: 3px;
+      font-size: 18px;
+    }
+    .circuits-table td.recommended-cell::before {
+      color: var(--black);
+    }
+
+    .circuits-table td.td-duty {
+      background: var(--brand-blue-dark);
+      color: var(--brand-blue);
+      padding: 10px;
+      margin: 4px -8px;
+      border-radius: 3px;
+      font-size: 18px;
+    }
+    .circuits-table td.td-duty::before {
+      color: var(--brand-blue);
+    }
+
+    /* Full-width inputs in cards */
+    .circuits-table input[type=number],
+    .circuits-table input[type=text],
+    .circuits-table select {
+      width: 100%;
+      min-width: 0;
+      font-size: 16px; /* prevents iOS zoom */
+      padding: 9px 12px;
+    }
+
+    /* Totals bar - 2 columns on mobile */
+    .totals-bar { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .total-block { padding: 10px 12px; }
+    .total-block .r-value { font-size: 22px; }
+    .total-block .r-label { font-size: 10px; }
+    .total-block .r-unit { font-size: 10px; }
+
+    /* Glycol block tighter */
+    .glycol-props { grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+    .glycol-prop .pv { font-size: 15px; }
+    .glycol-prop .pl { font-size: 9px; letter-spacing: 0.5px; }
+
+    /* Card padding */
+    .card { padding: 16px; }
+    .card-title { font-size: 12px; }
+    .card-title .hint { display: none; }
+
+    /* Body font size adjustment */
+    body { font-size: 14px; }
+  }
+
+  .card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 20px 22px;
+  }
+
+  .card-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--ink);
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--brand-blue);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .card-title .hint {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.3px; text-transform: none;
+    color: var(--muted);
+  }
+
+  /* ===== INPUTS ===== */
+  label {
+    display: block;
+    font-size: 12px; font-weight: 600;
+    color: var(--ink-soft);
+    letter-spacing: 0.5px; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  label .unit {
+    color: var(--brand-blue-deep);
+    font-weight: 700; margin-left: 3px;
+  }
+
+  input[type=number], select, input[type=text] {
+    width: 100%;
+    background: var(--white);
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px; font-weight: 500;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    -moz-appearance: textfield;
+  }
+
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+  input[type=number]:focus, select:focus, input[type=text]:focus {
+    border-color: var(--brand-blue);
+    box-shadow: 0 0 0 3px rgba(122,209,228,0.25);
+  }
+
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%235a6875'%3e%3cpath d='M4 6l4 4 4-4'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 14px;
+    padding-right: 28px;
+  }
+
+  /* ===== GLYCOL ===== */
+  .glycol-block {
+    background: var(--off-white);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+
+  .glycol-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px;
+  }
+
+  .glycol-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 22px; font-weight: 700;
+    color: var(--brand-blue-deep); line-height: 1;
+  }
+  .glycol-value .pct { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+  input[type=range] {
+    width: 100%;
+    -webkit-appearance: none; appearance: none;
+    height: 5px;
+    background: var(--line);
+    border-radius: 3px; outline: none;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--brand-blue);
+    border: 3px solid var(--black);
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--brand-blue); border: 3px solid var(--black);
+    cursor: pointer;
+  }
+
+  .glycol-ticks {
+    display: flex; justify-content: space-between;
+    margin-top: 6px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 10px; color: var(--muted);
+    font-weight: 500;
+  }
+
+  .glycol-props {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line-strong);
+  }
+
+  .glycol-prop { text-align: center; }
+  .glycol-prop .pv {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 16px; font-weight: 700;
+    color: var(--ink); line-height: 1;
+  }
+  .glycol-prop .pl {
+    font-size: 9px; color: var(--muted);
+    letter-spacing: 1px; text-transform: uppercase;
+    margin-top: 3px;
+  }
+
+  /* ===== MODE TABS ===== */
+  .mode-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 4px;
+    background: var(--off-white);
+    border-radius: 4px;
+    border: 1px solid var(--line);
+  }
+
+  .mode-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+  }
+
+  .mode-tab.active {
+    background: var(--black);
+    color: var(--brand-blue);
+  }
+
+  .mode-tab:hover:not(.active) {
+    background: rgba(122,209,228,0.1);
+    color: var(--ink);
+  }
+
+  /* ===== CIRCUIT TABLE ===== */
+  .circuits-card {
+    margin-bottom: 24px;
+  }
+
+  .circuits-wrap { overflow-x: auto; }
+
+  .circuits-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 14px;
+    min-width: 1400px;
+  }
+
+  .circuits-table th {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase;
+    color: var(--ink);
+    text-align: left;
+    padding: 12px 10px;
+    background: var(--off-white);
+    border-bottom: 2px solid var(--black);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    line-height: 1.25;
+  }
+
+  .circuits-table th.derived {
+    background: var(--brand-blue-dark);
+    color: var(--brand-blue);
+  }
+
+  .circuits-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+    color: var(--ink);
+  }
+
+  .circuits-table td.derived-cell {
+    background: rgba(122,209,228,0.1);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--brand-blue-deep);
+    white-space: nowrap;
+  }
+
+  .circuits-table td.recommended-cell {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 17px;
+    color: var(--black);
+    background: rgba(122,209,228,0.14);
+  }
+
+  .circuits-table input[type=number],
+  .circuits-table input[type=text],
+  .circuits-table select {
+    font-size: 14px;
+    padding: 7px 9px;
+    min-width: 70px;
+    font-weight: 500;
+  }
+
+  .circuits-table input[type=text] { min-width: 130px; }
+  .circuits-table select { min-width: 105px; }
+
+  .circuits-table .mode-select { min-width: 100px; }
+
+  .row-delete {
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    color: var(--muted);
+    width: 26px; height: 26px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    transition: all 0.15s;
+  }
+  .row-delete:hover {
+    background: var(--warn);
+    color: var(--white);
+    border-color: var(--warn);
+  }
+
+  .badge {
+    display: inline-block;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.8px; text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 2px;
+  }
+  .badge-ok   { background: rgba(31,122,76,0.14); color: var(--ok); border: 1px solid rgba(31,122,76,0.35); }
+  .badge-warn { background: rgba(199,68,24,0.14); color: var(--warn); border: 1px solid rgba(199,68,24,0.35); }
+  .badge-rec  { background: var(--brand-blue); color: var(--black); border: 1px solid var(--brand-blue-deep); }
+
+  /* ===== BUTTONS ===== */
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .btn {
+    background: var(--black);
+    color: var(--white);
+    border: none;
+    border-radius: 3px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    padding: 9px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn:hover { background: var(--brand-blue-deep); }
+
+  .btn.btn-secondary {
+    background: var(--white); color: var(--black);
+    border: 1px solid var(--line-strong);
+  }
+  .btn.btn-secondary:hover { background: var(--brand-blue); border-color: var(--brand-blue); }
+
+  .btn.btn-primary {
+    background: var(--brand-blue);
+    color: var(--black);
+  }
+  .btn.btn-primary:hover { background: var(--brand-blue-deep); color: var(--white); }
+
+  /* ===== TOTALS ===== */
+  .totals-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin: 16px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+
+  .total-block {
+    background: var(--brand-blue-dark);
+    color: var(--white);
+    border-radius: 3px;
+    padding: 12px 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .total-block::before {
+    content: ''; position: absolute;
+    top: 0; left: 0; bottom: 0; width: 3px;
+    background: var(--brand-blue);
+  }
+  .total-block .r-label {
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 1px; text-transform: uppercase;
+    color: var(--brand-blue); margin-bottom: 6px;
+  }
+  .total-block .r-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 30px; font-weight: 700;
+    color: var(--white); line-height: 1;
+  }
+  .total-block .r-unit {
+    font-size: 11px; color: rgba(255,255,255,0.75);
+    margin-top: 4px;
+  }
+
+  /* ===== PROJECT BAR ===== */
+  .project-bar {
+    display: flex;
+    gap: 16px;
+    align-items: end;
+    padding: 14px 20px;
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .project-bar .field {
+    flex: 1;
+    min-width: 180px;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    flex-wrap: wrap;
+  }
+
+  /* ===== FOOTER ===== */
+  footer {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 16px 28px 32px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    letter-spacing: 0.2px;
+  }
+
+  footer span { color: var(--brand-blue-deep); font-weight: 600; }
+
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--black);
+    color: var(--brand-blue);
+    padding: 12px 20px;
+    border-radius: 3px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    font-size: 13px;
+    border-left: 3px solid var(--brand-blue);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 100;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-4px);
+  }
+
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* ===== INDEX CHECKBOX ===== */
+  .index-check-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  input[type=checkbox].index-check {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--brand-blue);
+    cursor: pointer;
+  }
+
+  .circuits-table tr.is-index-run td {
+    background: rgba(122,209,228,0.07);
+  }
+
+  .circuits-table tr.is-index-run td.recommended-cell {
+    background: var(--brand-blue);
+  }
+
+  .circuits-table tr.is-index-run td.td-duty {
+    background: var(--brand-blue-dark);
+  }
+
+  .circuits-table tr.is-index-run td:first-child {
+    border-left: 4px solid var(--brand-blue);
+  }
+
+  /* ===== PUMP PANEL BLOCKS ===== */
+  .pump-block {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(122,209,228,0.15);
+    border-radius: 3px;
+    padding: 12px 14px;
+  }
+
+  .pump-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--brand-blue);
+    margin-bottom: 4px;
+  }
+
+  .pump-value {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--white);
+    line-height: 1;
+  }
+
+  .pump-unit {
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+    margin-top: 3px;
+  }
+
+  @media (max-width: 820px) {
+    #pumpComponentGrid { grid-template-columns: 1fr !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand-mark">adi</div>
+  <div class="title-block">
+    <h1>Pipework Sizer — Multi-Circuit</h1>
+    <div class="sub">ADI Climate Systems · HVAC Hydronics</div>
+  </div>
+  <div class="eq">Q = ṁ · cₚ · ΔT</div>
+  <div class="limit-badge">Max 300 Pa/m</div>
+</header>
+
+<main>
+
+  <!-- Project Bar -->
+  <div class="project-bar">
+    <div class="field" style="margin:0">
+      <label>Project / Job Reference</label>
+      <input type="text" id="projectRef" placeholder="e.g. Q306588 — Project Name">
+    </div>
+    <div class="field" style="margin:0">
+      <label>Engineer</label>
+      <input type="text" id="engineer" placeholder="Your name">
+    </div>
+    <div class="field" style="margin:0; max-width:150px">
+      <label>Date</label>
+      <input type="text" id="calcDate" readonly>
+    </div>
+    <div class="toolbar">
+      <button class="btn btn-secondary" id="addRowBtn">+ Add Circuit</button>
+      <button class="btn" id="exportCsvBtn">Export CSV</button>
+      <button class="btn btn-primary" id="exportXlsxBtn">Export Excel</button>
+    </div>
+  </div>
+
+  <!-- Global Fluid Setup -->
+  <div class="top-grid">
+    <div class="card">
+      <div class="card-title">System Fluid Setup <span class="hint">applies to all circuits</span></div>
+
+      <div class="glycol-block">
+        <div class="glycol-header">
+          <label style="margin:0">Propylene Glycol Content</label>
+          <div class="glycol-value"><span id="glycolPctDisplay">0</span><span class="pct">%</span></div>
+        </div>
+        <input type="range" id="glycol" min="0" max="40" step="5" value="0">
+        <div class="glycol-ticks">
+          <span>0</span><span>5</span><span>10</span><span>15</span><span>20</span>
+          <span>25</span><span>30</span><span>35</span><span>40</span>
+        </div>
+
+        <div class="glycol-props">
+          <div class="glycol-prop">
+            <div class="pv" id="pv-rho">999</div>
+            <div class="pl">Density kg/m³</div>
+          </div>
+          <div class="glycol-prop">
+            <div class="pv" id="pv-cp">4.182</div>
+            <div class="pl">Cp kJ/kg·K</div>
+          </div>
+          <div class="glycol-prop">
+            <div class="pv" id="pv-fp">0</div>
+            <div class="pl">Freeze °C</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label>Density ρ <span class="unit">kg/m³</span></label>
+          <input type="number" id="rho" value="999" step="1">
+        </div>
+        <div class="field">
+          <label>Specific Heat cₚ <span class="unit">kJ/kg·K</span></label>
+          <input type="number" id="cp" value="4.182" step="0.001">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Sizing Rules <span class="hint">design limits</span></div>
+
+      <div class="row2">
+        <div class="field">
+          <label>Max Pressure Drop <span class="unit">Pa/m</span></label>
+          <input type="number" id="limitPd" value="300" step="10">
+        </div>
+        <div class="field">
+          <label>Default Pipe Material</label>
+          <select id="defaultMaterial">
+            <option value="carbon" selected>Carbon Steel</option>
+            <option value="copper">Copper</option>
+            <option value="stainless">Stainless 316</option>
+            <option value="mlcp">MLCP</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label>Min Velocity <span class="unit">m/s</span></label>
+          <input type="number" id="vMin" value="0.3" step="0.1">
+        </div>
+        <div class="field">
+          <label>Max Velocity <span class="unit">m/s</span></label>
+          <input type="number" id="vMax" value="3.0" step="0.1">
+        </div>
+      </div>
+
+      <div style="font-size:13px; color:var(--ink-soft); margin-top:12px; padding:12px 14px; background:var(--off-white); border-left:3px solid var(--brand-blue); border-radius:2px; line-height:1.6">
+        <strong style="color:var(--ink)">Recommendation logic:</strong> first standard size where Pa/m ≤ limit <em>and</em> velocity falls inside the defined range.
+      </div>
+    </div>
+  </div>
+
+  <!-- Circuits Table -->
+  <div class="card circuits-card">
+    <div class="card-title">
+      Circuits <span class="hint" id="circuitCountHint">0 circuits</span>
+    </div>
+
+    <div class="circuits-wrap">
+      <table class="circuits-table" id="circuitsTable">
+        <thead>
+          <tr>
+            <th style="width:36px"></th>
+            <th title="Tick to mark this as part of the index run">Index<br><span style="font-weight:400;color:var(--brand-blue);font-size:11px">run</span></th>
+            <th>Reference</th>
+            <th>Mode</th>
+            <th>Material</th>
+            <th title="Only active in 'Size from kW' mode — enter heat load in kW">Input A<br><span style="font-weight:400;color:var(--brand-blue);font-size:11px">(kW)</span></th>
+            <th title="ΔT in both modes">ΔT (K)</th>
+            <th title="Only active in 'Size from l/s' mode — enter flow rate in l/s">Input B<br><span style="font-weight:400;color:var(--brand-blue);font-size:11px">(l/s)</span></th>
+            <th title="Straight pipe run length in metres">Length (m)</th>
+            <th title="Fitting equivalent length as % of straight run">Fittings %</th>
+            <th title="Pressure drop across connected equipment (AHU, coil, valve, etc.) in kPa">Consumer<br><span style="font-weight:400;color:var(--brand-blue);font-size:11px">load (kPa)</span></th>
+            <th class="derived">Mass Flow</th>
+            <th class="derived">Vol Flow l/s</th>
+            <th class="derived">Vol Flow m³/h</th>
+            <th class="derived">Duty kW</th>
+            <th class="derived">Recommended</th>
+            <th class="derived">Velocity</th>
+            <th class="derived">Pa/m</th>
+            <th class="derived">Pipe Loss</th>
+            <th class="derived">Total Loss</th>
+            <th class="derived">Status</th>
+          </tr>
+        </thead>
+        <tbody id="circuitsBody"></tbody>
+      </table>
+    </div>
+
+    <div style="font-size:13px; color:var(--ink-soft); margin-top:14px; padding:14px 16px; background:var(--off-white); border-left:3px solid var(--brand-blue); border-radius:2px; line-height:1.65">
+      <strong style="color:var(--ink)">Total Loss = Pa/m × length × (1 + fittings%).</strong>
+      Fittings allowance covers bends, tees, valves &amp; equipment as an equivalent length uplift — typical ranges: straight mains 15–25%, branches with multiple fittings 30–40%, plantroom dense with valves 50%+.
+      The <em>Max Circuit Loss</em> total identifies the index run — the critical circuit for pump selection.
+    </div>
+
+    <div class="totals-bar">
+      <div class="total-block">
+        <div class="r-label">Circuits</div>
+        <div class="r-value" id="t-count">0</div>
+        <div class="r-unit">total</div>
+      </div>      <div class="total-block">
+        <div class="r-label">Total Duty</div>
+        <div class="r-value" id="t-kw">0.0</div>
+        <div class="r-unit">kW</div>
+      </div>
+      <div class="total-block">
+        <div class="r-label">Total Flow</div>
+        <div class="r-value" id="t-lps">0.00</div>
+        <div class="r-unit">l/s</div>
+      </div>
+      <div class="total-block">
+        <div class="r-label">Total Flow</div>
+        <div class="r-value" id="t-m3h">0.00</div>
+        <div class="r-unit">m³/h</div>
+      </div>
+      <div class="total-block">
+        <div class="r-label">Total Mass</div>
+        <div class="r-value" id="t-mdot">0.000</div>
+        <div class="r-unit">kg/s</div>
+      </div>
+      <div class="total-block">
+        <div class="r-label">Max Circuit Loss</div>
+        <div class="r-value" id="t-maxloss">0.0</div>
+        <div class="r-unit">kPa · index run</div>
+      </div>
+      <div class="total-block">
+        <div class="r-label">Sum Losses</div>
+        <div class="r-value" id="t-sumloss">0.0</div>
+        <div class="r-unit">kPa · all circuits</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pump Sizing Panel -->
+  <div class="card" id="pumpPanel" style="margin-bottom:24px">
+    <div class="card-title">
+      Index Run &amp; Pump Sizing <span class="hint">based on circuits marked as index run</span>
+    </div>
+
+    <div id="pumpNoIndex" style="font-size:14px;color:var(--muted);padding:16px 0">
+      Tick the <strong style="color:var(--ink)">Index</strong> checkbox on one or more circuits above to calculate the system index pressure and size the pump.
+    </div>
+
+    <div id="pumpContent" style="display:none">
+
+      <!-- Index run breakdown table -->
+      <div style="overflow-x:auto;margin-bottom:20px">
+        <table class="circuits-table" id="indexBreakdownTable" style="min-width:600px">
+          <thead>
+            <tr>
+              <th>Circuit</th>
+              <th class="derived">Pipe Loss (kPa)</th>
+              <th class="derived">Consumer Load (kPa)</th>
+              <th class="derived">Circuit Total (kPa)</th>
+            </tr>
+          </thead>
+          <tbody id="indexBreakdownBody"></tbody>
+        </table>
+      </div>
+
+      <!-- System pressure components -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px" id="pumpComponentGrid">
+
+        <div class="card" style="padding:18px;background:var(--off-white);border:1px solid var(--line)">
+          <div class="card-title" style="font-size:11px;margin-bottom:14px">Additional System Resistances</div>
+
+          <div class="field">
+            <label>Chiller / Boiler pressure drop <span class="unit">kPa</span></label>
+            <input type="number" id="plantPd" value="30" step="1" min="0" oninput="renderPumpPanel()">
+          </div>
+          <div class="field">
+            <label>Control valve allowance <span class="unit">kPa</span></label>
+            <input type="number" id="valvePd" value="20" step="1" min="0" oninput="renderPumpPanel()">
+          </div>
+          <div class="field">
+            <label>Strainer / filter <span class="unit">kPa</span></label>
+            <input type="number" id="strainerPd" value="10" step="1" min="0" oninput="renderPumpPanel()">
+          </div>
+          <div class="field">
+            <label>Other / miscellaneous <span class="unit">kPa</span></label>
+            <input type="number" id="miscPd" value="0" step="1" min="0" oninput="renderPumpPanel()">
+          </div>
+        </div>
+
+        <div class="card" style="padding:18px;background:var(--off-white);border:1px solid var(--line)">
+          <div class="card-title" style="font-size:11px;margin-bottom:14px">Safety &amp; Selection</div>
+          <div class="field">
+            <label>Safety factor <span class="unit">%</span></label>
+            <input type="number" id="safetyFactor" value="10" step="5" min="0" max="50" oninput="renderPumpPanel()">
+          </div>
+          <div class="field">
+            <label>Static head (if open system) <span class="unit">kPa</span></label>
+            <input type="number" id="staticHead" value="0" step="1" min="0" oninput="renderPumpPanel()">
+          </div>
+          <div style="font-size:12px;color:var(--muted);padding:10px 0;line-height:1.6;border-top:1px solid var(--line);margin-top:8px">
+            For a sealed pressurised system, static head is <strong style="color:var(--ink)">0</strong>. Only enter a value for open circuits or roof-level tank fed systems.
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Pump results -->
+      <div style="background:var(--brand-blue-dark);border-radius:4px;padding:20px 24px;border-left:4px solid var(--brand-blue)">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--brand-blue);margin-bottom:16px">System Index Pressure &amp; Pump Duty</div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px">
+          <div class="pump-block">
+            <div class="pump-label">Index Run Pipe &amp; Load</div>
+            <div class="pump-value" id="ps-indexPipe">—</div>
+            <div class="pump-unit">kPa</div>
+          </div>
+          <div class="pump-block">
+            <div class="pump-label">Additional Resistances</div>
+            <div class="pump-value" id="ps-additional">—</div>
+            <div class="pump-unit">kPa</div>
+          </div>
+          <div class="pump-block">
+            <div class="pump-label">Static Head</div>
+            <div class="pump-value" id="ps-static">—</div>
+            <div class="pump-unit">kPa</div>
+          </div>
+          <div class="pump-block" style="background:rgba(122,209,228,0.15);border:1px solid rgba(122,209,228,0.3)">
+            <div class="pump-label">Sub-total</div>
+            <div class="pump-value" id="ps-subtotal">—</div>
+            <div class="pump-unit">kPa</div>
+          </div>
+          <div class="pump-block" style="background:rgba(122,209,228,0.15);border:1px solid rgba(122,209,228,0.3)">
+            <div class="pump-label">Safety Factor (+<span id="ps-sfPct">10</span>%)</div>
+            <div class="pump-value" id="ps-safety">—</div>
+            <div class="pump-unit">kPa</div>
+          </div>
+        </div>
+
+        <!-- Final pump duty — large highlighted -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+          <div style="background:var(--brand-blue);border-radius:3px;padding:16px 18px;text-align:center">
+            <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--black);margin-bottom:6px">Design Head</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:38px;font-weight:900;color:var(--black);line-height:1" id="ps-finalKpa">—</div>
+            <div style="font-size:12px;color:var(--brand-blue-dark);font-weight:600;margin-top:4px">kPa</div>
+          </div>
+          <div style="background:var(--brand-blue);border-radius:3px;padding:16px 18px;text-align:center">
+            <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--black);margin-bottom:6px">Design Head</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:38px;font-weight:900;color:var(--black);line-height:1" id="ps-finalMH">—</div>
+            <div style="font-size:12px;color:var(--brand-blue-dark);font-weight:600;margin-top:4px">m H₂O</div>
+          </div>
+          <div style="background:rgba(122,209,228,0.12);border:1px solid rgba(122,209,228,0.3);border-radius:3px;padding:16px 18px;text-align:center">
+            <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--brand-blue);margin-bottom:6px">Design Flow</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:38px;font-weight:900;color:var(--white);line-height:1" id="ps-finalFlow">—</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.7);font-weight:500;margin-top:4px">l/s (<span id="ps-finalM3h">—</span> m³/h)</div>
+          </div>
+        </div>
+
+        <div style="font-size:12px;color:rgba(255,255,255,0.65);margin-top:14px;line-height:1.6;border-top:1px solid rgba(122,209,228,0.2);padding-top:12px" id="ps-note">
+          —
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Pipework sizing tool · Darcy–Weisbach + Swamee–Jain friction factor · <span>ADI Climate Systems Ltd</span>
+</footer>
+
+<div class="toast" id="toast">Copied</div>
+
+<script>
+/* ============ PIPE LIBRARIES (up to 450mm) ============ */
+const COPPER = [
+  ['15mm',15.0,0.7],['22mm',22.0,0.9],['28mm',28.0,0.9],['35mm',35.0,1.2],
+  ['42mm',42.0,1.2],['54mm',54.0,1.2],['67mm',66.7,1.5],['76mm',76.1,1.5],
+  ['108mm',108.0,1.5],['133mm',133.0,2.0],['159mm',159.0,2.0],['219mm',219.1,2.5],
+  ['267mm',267.0,3.0],['318mm',318.0,3.0],
+];
+const CARBON = [
+  ['15mm',21.3,2.6],['20mm',26.9,2.6],['25mm',33.7,3.2],['32mm',42.4,3.2],
+  ['40mm',48.3,3.2],['50mm',60.3,3.6],['65mm',76.1,3.6],['80mm',88.9,4.0],
+  ['100mm',114.3,4.5],['125mm',139.7,5.0],['150mm',168.3,5.0],['200mm',219.1,6.3],
+  ['250mm',273.0,6.3],['300mm',323.9,7.1],['350mm',355.6,8.0],['400mm',406.4,8.8],
+  ['450mm',457.0,10.0],
+];
+const STAINLESS = [
+  ['15mm',15.0,1.0],['22mm',22.0,1.0],['28mm',28.0,1.2],['35mm',35.0,1.2],
+  ['42mm',42.0,1.2],['54mm',54.0,1.5],['76mm',76.1,1.5],['108mm',108.0,2.0],
+  ['133mm',133.0,2.0],['159mm',159.0,2.0],['219mm',219.1,2.5],['273mm',273.0,3.0],
+  ['323mm',323.9,3.0],['406mm',406.4,4.0],['457mm',457.0,4.0],
+];
+const MLCP = [
+  ['16mm',16.0,2.0],['20mm',20.0,2.0],['25mm',25.0,2.5],['32mm',32.0,3.0],
+  ['40mm',40.0,3.5],['50mm',50.0,4.0],['63mm',63.0,4.5],['75mm',75.0,5.0],
+  ['90mm',90.0,6.0],['110mm',110.0,7.0],
+];
+
+const PIPES = { copper: COPPER, carbon: CARBON, stainless: STAINLESS, mlcp: MLCP };
+const ROUGHNESS = { copper: 0.0000015, carbon: 0.000046, stainless: 0.000015, mlcp: 0.000007 };
+const MAT_LABEL = { carbon: 'Carbon Steel', copper: 'Copper', stainless: 'Stainless 316', mlcp: 'MLCP' };
+
+const GLYCOL_TABLE = {
+   0:[999,4.182,0.00131,0.0], 5:[1004,4.112,0.00152,-1.6], 10:[1009,4.042,0.00178,-3.3],
+  15:[1014,3.972,0.00208,-5.1], 20:[1019,3.902,0.00244,-7.1], 25:[1024,3.832,0.00287,-9.6],
+  30:[1029,3.762,0.00340,-13.0], 35:[1033,3.692,0.00405,-17.2], 40:[1038,3.622,0.00485,-22.3],
+};
+
+function getGlycolProps(pct) { return GLYCOL_TABLE[pct] || GLYCOL_TABLE[0]; }
+function currentViscosity() { return getGlycolProps(parseInt(document.getElementById('glycol').value))[2]; }
+
+function calcPD(vflow_m3s, id_m, material) {
+  const A = Math.PI * (id_m / 2) ** 2;
+  const v = vflow_m3s / A;
+  const rho = parseFloat(document.getElementById('rho').value);
+  const mu = currentViscosity();
+  const Re = rho * v * id_m / mu;
+  const eps = ROUGHNESS[material] || 0.000046;
+  const relRough = eps / id_m;
+  let f;
+  if (Re < 2300) f = 64 / Math.max(Re, 1);
+  else {
+    const denom = Math.log10(relRough / 3.7 + 5.74 / Math.pow(Re, 0.9)) ** 2;
+    f = 0.25 / denom;
+  }
+  const pd = f * (rho * v * v) / (2 * id_m);
+  return { pd, v, Re };
+}
+
+/* ============ CIRCUIT MANAGEMENT ============ */
+let circuits = [];
+let nextId = 1;
+
+function newCircuit(overrides = {}) {
+  return {
+    id: nextId++,
+    ref: overrides.ref || `Circuit ${circuits.length + 1}`,
+    mode: overrides.mode || 'fromKw',
+    material: overrides.material || document.getElementById('defaultMaterial').value,
+    kw: overrides.kw ?? 50,
+    dT: overrides.dT ?? 6,
+    lps: overrides.lps ?? 2.0,
+    length: overrides.length ?? 20,
+    fittings: overrides.fittings ?? 30,
+    isIndex: overrides.isIndex ?? false,
+    consumerLoad: overrides.consumerLoad ?? 0,
+  };
+}
+
+function addCircuit(overrides) {
+  circuits.push(newCircuit(overrides));
+  renderCircuits();
+}
+
+function deleteCircuit(id) {
+  circuits = circuits.filter(c => c.id !== id);
+  renderCircuits();
+}
+
+function updateCircuitField(id, field, value) {
+  const c = circuits.find(c => c.id === id);
+  if (!c) return;
+  c[field] = value;
+  renderCircuits();
+}
+
+function calculateCircuit(c) {
+  const rho = parseFloat(document.getElementById('rho').value) || 999;
+  const cp  = parseFloat(document.getElementById('cp').value)  || 4.182;
+  const LIMIT = parseFloat(document.getElementById('limitPd').value) || 300;
+  const V_MIN = parseFloat(document.getElementById('vMin').value) || 0.3;
+  const V_MAX = parseFloat(document.getElementById('vMax').value) || 3.0;
+
+  const dT = Math.abs(parseFloat(c.dT) || 0);
+  if (dT < 0.1) return { error: 'ΔT must be > 0' };
+
+  let kw, mdot;
+  if (c.mode === 'fromKw') {
+    kw = parseFloat(c.kw) || 0;
+    if (kw <= 0) return { error: 'kW must be > 0' };
+    mdot = kw / (cp * dT);
+  } else { // fromFlow
+    const lps = parseFloat(c.lps) || 0;
+    if (lps <= 0) return { error: 'Flow must be > 0' };
+    mdot = (lps / 1000) * rho;
+    kw = mdot * cp * dT;
+  }
+
+  const vflow_m3s = mdot / rho;
+  const vflow_ls  = vflow_m3s * 1000;
+  const vflow_m3h = vflow_m3s * 3600;
+
+  const pipes = PIPES[c.material] || CARBON;
+  const rows = pipes.map(p => {
+    const [nom, od, wall] = p;
+    const id_mm = od - 2 * wall;
+    const id_m = id_mm / 1000;
+    if (id_m <= 0) return null;
+    const { pd, v } = calcPD(vflow_m3s, id_m, c.material);
+    return { nom, od, wall, id_mm, v, pd };
+  }).filter(Boolean);
+
+  const firstOk = rows.find(r => r.pd <= LIMIT && r.v >= V_MIN && r.v <= V_MAX);
+  const firstPDOk = rows.find(r => r.pd <= LIMIT);
+  const recommended = firstOk || firstPDOk || null;
+
+  // Total pressure loss for the recommended pipe
+  const length = parseFloat(c.length) || 0;
+  const fittings = parseFloat(c.fittings) || 0;
+  const consumerLoad = parseFloat(c.consumerLoad) || 0;
+  const effectiveLength = length * (1 + fittings / 100);
+  const pipeLoss_Pa = recommended ? recommended.pd * effectiveLength : 0;
+  const pipeLoss_kPa = pipeLoss_Pa / 1000;
+  const totalLoss_kPa = pipeLoss_kPa + consumerLoad;
+  const totalLoss_Pa = totalLoss_kPa * 1000;
+  const totalLoss_mH2O = totalLoss_Pa / (rho * 9.81);
+
+  let status;
+  if (firstOk) status = 'ok';
+  else if (firstPDOk) status = 'velocity_warn';
+  else status = 'no_fit';
+
+  return {
+    kw, mdot, vflow_ls, vflow_m3h, dT,
+    recommended, status, allRows: rows, limit: LIMIT,
+    length, fittings, effectiveLength, consumerLoad,
+    pipeLoss_kPa, totalLoss_kPa, totalLoss_mH2O,
+  };
+}
+
+/* ============ RENDER CIRCUITS ============ */
+function renderCircuits() {
+  const tbody = document.getElementById('circuitsBody');
+  tbody.innerHTML = '';
+
+  if (circuits.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="21" style="text-align:center;padding:32px;color:var(--ink-soft);font-style:italic;font-size:15px;display:table-cell">
+      No circuits yet &mdash; tap <strong style="color:var(--brand-blue-deep);font-style:normal">+ Add Circuit</strong> to start.
+    </td>`;
+    tbody.appendChild(tr);
+  }
+
+  let totalKw = 0, totalLps = 0, totalMdot = 0, totalM3h = 0;
+  let maxLoss_kPa = 0, sumLoss_kPa = 0;
+
+  circuits.forEach(c => {
+    const result = calculateCircuit(c);
+    const tr = document.createElement('tr');
+    if (c.isIndex) tr.classList.add('is-index-run');
+
+    const inputA = c.mode === 'fromKw'
+      ? `<input type="number" value="${c.kw}" step="1" min="0" onchange="updateCircuitField(${c.id},'kw',this.value)">`
+      : `<span style="color:var(--muted);font-size:12px;padding:0 4px">&mdash;</span>`;
+
+    const inputB = c.mode === 'fromFlow'
+      ? `<input type="number" value="${c.lps}" step="0.1" min="0" onchange="updateCircuitField(${c.id},'lps',this.value)">`
+      : `<span style="color:var(--muted);font-size:12px;padding:0 4px">&mdash;</span>`;
+
+    let statusBadge = '', recText = '&mdash;', velText = '&mdash;', pdText = '&mdash;';
+    let kwDerived = '&mdash;', mdotDerived = '&mdash;', lpsDerived = '&mdash;', m3hDerived = '&mdash;';
+    let pipeLossText = '&mdash;', totalLossText = '&mdash;';
+
+    if (!result.error) {
+      totalKw   += result.kw;
+      totalLps  += result.vflow_ls;
+      totalMdot += result.mdot;
+      totalM3h  += result.vflow_m3h;
+      kwDerived    = result.kw.toFixed(2);
+      mdotDerived  = result.mdot.toFixed(3);
+      lpsDerived   = result.vflow_ls.toFixed(3);
+      m3hDerived   = result.vflow_m3h.toFixed(2);
+
+      if (result.recommended) {
+        recText  = result.recommended.nom;
+        velText  = result.recommended.v.toFixed(2);
+        pdText   = result.recommended.pd.toFixed(1);
+        sumLoss_kPa += result.totalLoss_kPa;
+        if (result.totalLoss_kPa > maxLoss_kPa) maxLoss_kPa = result.totalLoss_kPa;
+
+        pipeLossText = result.pipeLoss_kPa.toFixed(1) + ' <span style="font-size:11px;color:var(--muted)">kPa</span>'
+          + '<div style="font-size:11px;color:var(--muted)">' + result.effectiveLength.toFixed(1) + ' m eq.</div>';
+
+        const clStr = result.consumerLoad > 0
+          ? '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + result.pipeLoss_kPa.toFixed(1) + ' pipe + ' + result.consumerLoad.toFixed(1) + ' load</div>'
+          : '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + result.totalLoss_mH2O.toFixed(2) + ' m H\u2082O</div>';
+        totalLossText = '<strong style="color:var(--brand-blue-deep);font-size:17px">' + result.totalLoss_kPa.toFixed(1) + '</strong>'
+          + ' <span style="color:var(--ink-soft);font-size:12px;font-weight:500">kPa</span>' + clStr;
+      }
+
+      if (result.status === 'ok')                statusBadge = '<span class="badge badge-rec">\u2713 OK</span>';
+      else if (result.status === 'velocity_warn') statusBadge = '<span class="badge badge-warn">Vel Range</span>';
+      else                                        statusBadge = '<span class="badge badge-warn">No Fit</span>';
+    } else {
+      statusBadge = '<span class="badge badge-warn">' + result.error + '</span>';
+    }
+
+    tr.innerHTML =
+      '<td class="td-delete"><button class="row-delete" onclick="deleteCircuit(' + c.id + ')" title="Remove">\xd7</button></td>'
+      + '<td class="td-index" data-label="Index Run"><div class="index-check-wrap"><input type="checkbox" class="index-check" ' + (c.isIndex ? 'checked' : '') + ' onchange="updateCircuitField(' + c.id + ',\'isIndex\',this.checked)"></div></td>'
+      + '<td class="td-ref" data-label="Reference"><input type="text" value="' + c.ref.replace(/"/g,'&quot;') + '" onchange="updateCircuitField(' + c.id + ',\'ref\',this.value)"></td>'
+      + '<td data-label="Mode"><select class="mode-select" onchange="updateCircuitField(' + c.id + ',\'mode\',this.value)">'
+      + '<option value="fromKw"' + (c.mode==='fromKw'?' selected':'') + '>Size from kW</option>'
+      + '<option value="fromFlow"' + (c.mode==='fromFlow'?' selected':'') + '>Size from l/s</option></select></td>'
+      + '<td data-label="Material"><select onchange="updateCircuitField(' + c.id + ',\'material\',this.value)">'
+      + '<option value="carbon"'    + (c.material==='carbon'?   ' selected':'') + '>Carbon Steel</option>'
+      + '<option value="copper"'    + (c.material==='copper'?   ' selected':'') + '>Copper</option>'
+      + '<option value="stainless"' + (c.material==='stainless'?' selected':'') + '>Stainless 316</option>'
+      + '<option value="mlcp"'      + (c.material==='mlcp'?     ' selected':'') + '>MLCP</option></select></td>'
+      + '<td data-label="Input A (kW)">' + inputA + '</td>'
+      + '<td data-label="\u0394T (K)"><input type="number" value="' + c.dT + '" step="0.5" min="0.1" onchange="updateCircuitField(' + c.id + ',\'dT\',this.value)"></td>'
+      + '<td data-label="Input B (l/s)">' + inputB + '</td>'
+      + '<td data-label="Length (m)"><input type="number" value="' + c.length + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'length\',this.value)"></td>'
+      + '<td data-label="Fittings %"><input type="number" value="' + c.fittings + '" step="5" min="0" onchange="updateCircuitField(' + c.id + ',\'fittings\',this.value)"></td>'
+      + '<td data-label="Consumer Load (kPa)"><input type="number" value="' + c.consumerLoad + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'consumerLoad\',this.value)" title="Equipment \u0394P: AHU coil, HX, FCU etc."></td>'
+      + '<td class="derived-cell" data-label="Mass Flow (kg/s)">' + mdotDerived + '</td>'
+      + '<td class="derived-cell" data-label="Vol Flow (l/s)">' + lpsDerived + '</td>'
+      + '<td class="derived-cell" data-label="Vol Flow (m\xb3/h)">' + m3hDerived + '</td>'
+      + '<td class="derived-cell td-duty" data-label="Duty (kW)" style="color:var(--brand-blue);background:var(--brand-blue-dark)">' + kwDerived + '</td>'
+      + '<td class="recommended-cell" data-label="Recommended">' + recText + '</td>'
+      + '<td class="derived-cell" data-label="Velocity (m/s)">' + velText + '</td>'
+      + '<td class="derived-cell" data-label="Pa/m">' + pdText + '</td>'
+      + '<td class="derived-cell" data-label="Pipe Loss (kPa)">' + pipeLossText + '</td>'
+      + '<td class="derived-cell" data-label="Total Loss">' + totalLossText + '</td>'
+      + '<td data-label="Status">' + statusBadge + '</td>';
+
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('t-count').textContent   = circuits.length;
+  document.getElementById('t-kw').textContent      = totalKw.toFixed(1);
+  document.getElementById('t-lps').textContent     = totalLps.toFixed(2);
+  document.getElementById('t-m3h').textContent     = totalM3h.toFixed(2);
+  document.getElementById('t-mdot').textContent    = totalMdot.toFixed(3);
+  document.getElementById('t-maxloss').textContent = maxLoss_kPa.toFixed(1);
+  document.getElementById('t-sumloss').textContent = sumLoss_kPa.toFixed(1);
+  document.getElementById('circuitCountHint').textContent = circuits.length + ' circuit' + (circuits.length===1?'':'s');
+
+  renderPumpPanel();
+  saveToLocalStorage();
+}
+
+/* ============ PUMP PANEL ============ */
+function renderPumpPanel() {
+  const indexCircuits = circuits.filter(c => c.isIndex);
+  const noIndex = document.getElementById('pumpNoIndex');
+  const content  = document.getElementById('pumpContent');
+  if (indexCircuits.length === 0) { noIndex.style.display=''; content.style.display='none'; return; }
+  noIndex.style.display = 'none';
+  content.style.display = '';
+
+  const rho = parseFloat(document.getElementById('rho').value) || 999;
+  const breakBody = document.getElementById('indexBreakdownBody');
+  breakBody.innerHTML = '';
+  let indexPipeLoss = 0, indexConsumerLoad = 0;
+
+  indexCircuits.forEach(c => {
+    const r = calculateCircuit(c);
+    const pl = (r.recommended ? r.pipeLoss_kPa : 0);
+    const cl = (r.consumerLoad || 0);
+    const ct = pl + cl;
+    indexPipeLoss     += pl;
+    indexConsumerLoad += cl;
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td style="font-weight:600">' + c.ref + '</td>'
+      + '<td class="derived-cell">' + pl.toFixed(2) + ' kPa</td>'
+      + '<td class="derived-cell">' + cl.toFixed(2) + ' kPa</td>'
+      + '<td class="derived-cell" style="font-weight:700;color:var(--brand-blue-deep)">' + ct.toFixed(2) + ' kPa</td>';
+    breakBody.appendChild(tr);
+  });
+
+  const totRow = document.createElement('tr');
+  totRow.style.borderTop = '2px solid var(--black)';
+  const idxTotal = indexPipeLoss + indexConsumerLoad;
+  totRow.innerHTML = '<td style="font-weight:700;font-family:\'Barlow Condensed\',sans-serif;font-size:13px;letter-spacing:1px;text-transform:uppercase">Index Run Total</td>'
+    + '<td class="derived-cell" style="font-weight:700">' + indexPipeLoss.toFixed(2) + ' kPa</td>'
+    + '<td class="derived-cell" style="font-weight:700">' + indexConsumerLoad.toFixed(2) + ' kPa</td>'
+    + '<td class="derived-cell" style="font-weight:800;font-size:17px;color:var(--brand-blue-deep)">' + idxTotal.toFixed(2) + ' kPa</td>';
+  breakBody.appendChild(totRow);
+
+  const plant      = parseFloat(document.getElementById('plantPd').value)    || 0;
+  const valve      = parseFloat(document.getElementById('valvePd').value)    || 0;
+  const strainer   = parseFloat(document.getElementById('strainerPd').value) || 0;
+  const misc       = parseFloat(document.getElementById('miscPd').value)     || 0;
+  const staticHead = parseFloat(document.getElementById('staticHead').value) || 0;
+  const safetyPct  = parseFloat(document.getElementById('safetyFactor').value) || 0;
+
+  const additional = plant + valve + strainer + misc;
+  const subtotal   = idxTotal + additional + staticHead;
+  const safetyAdd  = subtotal * safetyPct / 100;
+  const finalKpa   = subtotal + safetyAdd;
+  const finalMH    = (finalKpa * 1000) / (rho * 9.81);
+
+  let indexLps = 0, indexM3h = 0;
+  indexCircuits.forEach(c => {
+    const r = calculateCircuit(c);
+    if (!r.error) { indexLps += r.vflow_ls; indexM3h += r.vflow_m3h; }
+  });
+
+  document.getElementById('ps-indexPipe').textContent  = idxTotal.toFixed(1);
+  document.getElementById('ps-additional').textContent = additional.toFixed(1);
+  document.getElementById('ps-static').textContent     = staticHead.toFixed(1);
+  document.getElementById('ps-subtotal').textContent   = subtotal.toFixed(1);
+  document.getElementById('ps-safety').textContent     = safetyAdd.toFixed(1);
+  document.getElementById('ps-sfPct').textContent      = safetyPct;
+  document.getElementById('ps-finalKpa').textContent   = finalKpa.toFixed(1);
+  document.getElementById('ps-finalMH').textContent    = finalMH.toFixed(2);
+  document.getElementById('ps-finalFlow').textContent  = indexLps.toFixed(2);
+  document.getElementById('ps-finalM3h').textContent   = indexM3h.toFixed(2);
+
+  const indexNames = indexCircuits.map(c => c.ref).join(', ');
+  document.getElementById('ps-note').innerHTML =
+    'Index run: <strong style="color:rgba(255,255,255,0.9)">' + indexNames + '</strong> &middot; '
+    + 'Pipe &amp; load ' + idxTotal.toFixed(1) + ' + additional ' + additional.toFixed(1) + ' + static ' + staticHead.toFixed(1)
+    + ' kPa = ' + subtotal.toFixed(1) + ' kPa subtotal &middot; '
+    + safetyPct + '% safety = <strong style="color:rgba(255,255,255,0.9)">'
+    + finalKpa.toFixed(1) + ' kPa (' + finalMH.toFixed(2) + ' m H\u2082O) at ' + indexLps.toFixed(2) + ' l/s</strong>';
+}
+
+/* ============ GLYCOL ============ */
+function onGlycolChange() {
+  const pct = parseInt(document.getElementById('glycol').value);
+  const [rho, cp, mu, fp] = getGlycolProps(pct);
+  document.getElementById('glycolPctDisplay').textContent = pct;
+  document.getElementById('pv-rho').textContent = rho;
+  document.getElementById('pv-cp').textContent = cp.toFixed(3);
+  document.getElementById('pv-fp').textContent = fp.toFixed(1);
+  document.getElementById('rho').value = rho;
+  document.getElementById('cp').value = cp.toFixed(3);
+  renderCircuits();
+}
+
+/* ============ EXPORT ============ */
+function buildExportRows() {
+  const project = document.getElementById('projectRef').value || '';
+  const engineer = document.getElementById('engineer').value || '';
+  const date = document.getElementById('calcDate').value;
+  const glyPct = document.getElementById('glycol').value;
+  const rho = document.getElementById('rho').value;
+  const cp = document.getElementById('cp').value;
+  const limitPd = document.getElementById('limitPd').value;
+  const vMin = document.getElementById('vMin').value;
+  const vMax = document.getElementById('vMax').value;
+
+  const headerMeta = [
+    ['ADI Climate Systems — Pipework Sizing Calculation'],
+    ['Project Ref', project],
+    ['Engineer', engineer],
+    ['Date', date],
+    [],
+    ['Fluid', `${glyPct}% Propylene Glycol / Water`],
+    ['Density (kg/m³)', rho],
+    ['Specific Heat (kJ/kg·K)', cp],
+    ['Pressure Drop Limit (Pa/m)', limitPd],
+    ['Velocity Range (m/s)', `${vMin} – ${vMax}`],
+    [],
+  ];
+
+  const colHeaders = [
+    'Reference','Mode','Material','Input kW','Input l/s','ΔT (K)',
+    'Straight Length (m)','Fittings %','Equivalent Length (m)',
+    'Mass Flow kg/s','Vol Flow l/s','Vol Flow m³/h','Duty kW',
+    'Recommended Size','OD×Wall mm','ID mm','Velocity m/s','Pressure Drop Pa/m','% of Limit',
+    'Total Loss (kPa)','Total Loss (m H₂O)','Total Loss (bar)',
+    'Status'
+  ];
+
+  const dataRows = circuits.map(c => {
+    const r = calculateCircuit(c);
+    const modeLabel = c.mode === 'fromKw' ? 'Size from kW' : 'Size from l/s';
+    if (r.error) {
+      return [c.ref, modeLabel, MAT_LABEL[c.material], c.kw, c.lps, c.dT, c.length, c.fittings, '', '', '', '', '', '', '', '', '', '', '', '', '', '', r.error];
+    }
+    const rec = r.recommended;
+    const pctLim = rec ? ((rec.pd / r.limit) * 100).toFixed(1) : '';
+    const status = r.status === 'ok' ? 'OK' : r.status === 'velocity_warn' ? 'Velocity outside range' : 'No fit';
+    return [
+      c.ref, modeLabel, MAT_LABEL[c.material],
+      c.mode === 'fromKw' ? c.kw : '',
+      c.mode === 'fromFlow' ? c.lps : '',
+      c.dT,
+      c.length,
+      c.fittings,
+      r.effectiveLength.toFixed(2),
+      r.mdot.toFixed(3),
+      r.vflow_ls.toFixed(3),
+      r.vflow_m3h.toFixed(2),
+      r.kw.toFixed(2),
+      rec ? rec.nom : '',
+      rec ? `${rec.od} × ${rec.wall}` : '',
+      rec ? rec.id_mm.toFixed(1) : '',
+      rec ? rec.v.toFixed(2) : '',
+      rec ? rec.pd.toFixed(1) : '',
+      pctLim,
+      rec ? r.totalLoss_kPa.toFixed(2) : '',
+      rec ? r.totalLoss_mH2O.toFixed(2) : '',
+      rec ? (r.totalLoss_kPa / 100).toFixed(3) : '',
+      status,
+    ];
+  });
+
+  // Totals row
+  let totalKw = 0, totalLps = 0, totalM3h = 0, totalMdot = 0, maxLoss = 0, sumLoss = 0;
+  circuits.forEach(c => {
+    const r = calculateCircuit(c);
+    if (!r.error) {
+      totalKw += r.kw; totalLps += r.vflow_ls; totalM3h += r.vflow_m3h; totalMdot += r.mdot;
+      if (r.totalLoss_kPa > maxLoss) maxLoss = r.totalLoss_kPa;
+      sumLoss += r.totalLoss_kPa;
+    }
+  });
+
+  const totalRow = [
+    'TOTAL','','','','','','','','',
+    totalMdot.toFixed(3), totalLps.toFixed(3), totalM3h.toFixed(2), totalKw.toFixed(2),
+    '','','','','','',
+    sumLoss.toFixed(2), '', '',
+    `Max index run: ${maxLoss.toFixed(2)} kPa`
+  ];
+
+  return { headerMeta, colHeaders, dataRows, totalRow };
+}
+
+function exportCSV() {
+  const { headerMeta, colHeaders, dataRows, totalRow } = buildExportRows();
+
+  const esc = (val) => {
+    const s = String(val ?? '');
+    if (/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+    return s;
+  };
+
+  const lines = [];
+  headerMeta.forEach(row => lines.push(row.map(esc).join(',')));
+  lines.push(colHeaders.map(esc).join(','));
+  dataRows.forEach(row => lines.push(row.map(esc).join(',')));
+  lines.push(totalRow.map(esc).join(','));
+
+  const csv = lines.join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const project = (document.getElementById('projectRef').value || 'pipe-sizing').replace(/[^a-z0-9-_]+/gi,'_');
+  downloadBlob(blob, `${project}_pipe_sizing.csv`);
+  showToast('CSV Exported');
+}
+
+function exportXLSX() {
+  // Build as SpreadsheetML 2003 XML — opens cleanly in Excel with typed cells
+  const { headerMeta, colHeaders, dataRows, totalRow } = buildExportRows();
+
+  const escXml = (s) => String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+
+  const cellXml = (val, forceStr = false) => {
+    if (val === '' || val === null || val === undefined) return '<Cell/>';
+    const num = Number(val);
+    const isNum = !forceStr && val !== '' && !isNaN(num) && /^-?\d+(\.\d+)?$/.test(String(val).trim());
+    if (isNum) return `<Cell><Data ss:Type="Number">${num}</Data></Cell>`;
+    return `<Cell><Data ss:Type="String">${escXml(val)}</Data></Cell>`;
+  };
+
+  let rowsXml = '';
+  headerMeta.forEach(row => {
+    if (row.length === 0) {
+      rowsXml += '<Row/>';
+      return;
+    }
+    rowsXml += '<Row>';
+    row.forEach((v, i) => {
+      if (i === 0) rowsXml += `<Cell ss:StyleID="sHeader"><Data ss:Type="String">${escXml(v)}</Data></Cell>`;
+      else rowsXml += cellXml(v, true);
+    });
+    rowsXml += '</Row>';
+  });
+
+  // Column headers row
+  rowsXml += '<Row>';
+  colHeaders.forEach(h => {
+    rowsXml += `<Cell ss:StyleID="sColHeader"><Data ss:Type="String">${escXml(h)}</Data></Cell>`;
+  });
+  rowsXml += '</Row>';
+
+  // String column indices in dataRows: 0=Ref, 1=Mode, 2=Material, 13=RecSize, 14=OD×Wall, 22=Status
+  const STRING_COLS = new Set([0, 1, 2, 13, 14, 22]);
+
+  dataRows.forEach(row => {
+    rowsXml += '<Row>';
+    row.forEach((v, i) => {
+      if (STRING_COLS.has(i)) {
+        rowsXml += `<Cell><Data ss:Type="String">${escXml(v)}</Data></Cell>`;
+      } else {
+        rowsXml += cellXml(v);
+      }
+    });
+    rowsXml += '</Row>';
+  });
+
+  // Totals row
+  rowsXml += '<Row>';
+  totalRow.forEach((v, i) => {
+    if (i === 0) rowsXml += `<Cell ss:StyleID="sTotal"><Data ss:Type="String">${escXml(v)}</Data></Cell>`;
+    else if (v === '') rowsXml += '<Cell ss:StyleID="sTotal"/>';
+    else rowsXml += `<Cell ss:StyleID="sTotal">${cellXml(v).replace('<Cell>','').replace('</Cell>','')}</Cell>`;
+  });
+  rowsXml += '</Row>';
+
+  const xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+<Styles>
+<Style ss:ID="Default" ss:Name="Normal"><Font ss:FontName="Calibri" ss:Size="11"/></Style>
+<Style ss:ID="sHeader"><Font ss:Bold="1" ss:Size="11" ss:Color="#0b2a38"/></Style>
+<Style ss:ID="sColHeader">
+  <Font ss:Bold="1" ss:Color="#FFFFFF"/>
+  <Interior ss:Color="#0b2a38" ss:Pattern="Solid"/>
+  <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#7ad1e4"/></Borders>
+</Style>
+<Style ss:ID="sTotal">
+  <Font ss:Bold="1" ss:Color="#0b2a38"/>
+  <Interior ss:Color="#e8f4f8" ss:Pattern="Solid"/>
+  <Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0b2a38"/></Borders>
+</Style>
+</Styles>
+<Worksheet ss:Name="Pipe Sizing">
+<Table>${rowsXml}</Table>
+</Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+  const project = (document.getElementById('projectRef').value || 'pipe-sizing').replace(/[^a-z0-9-_]+/gi,'_');
+  downloadBlob(blob, `${project}_pipe_sizing.xls`);
+  showToast('Excel Exported');
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+/* ============ PERSISTENCE ============ */
+function saveToLocalStorage() {
+  try {
+    const state = {
+      circuits,
+      nextId,
+      glycol: document.getElementById('glycol').value,
+      defaultMaterial: document.getElementById('defaultMaterial').value,
+      limitPd: document.getElementById('limitPd').value,
+      vMin: document.getElementById('vMin').value,
+      vMax: document.getElementById('vMax').value,
+      projectRef: document.getElementById('projectRef').value,
+      engineer: document.getElementById('engineer').value,
+    };
+    localStorage.setItem('adi_pipesizer_v2', JSON.stringify(state));
+  } catch (e) {}
+}
+
+function loadFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem('adi_pipesizer_v2');
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (s.circuits) {
+      circuits = s.circuits.map(c => ({
+        length: 20, fittings: 30, isIndex: false, consumerLoad: 0,
+        ...c,
+      }));
+      nextId = s.nextId || circuits.length + 1;
+    }
+    if (s.glycol !== undefined) document.getElementById('glycol').value = s.glycol;
+    if (s.defaultMaterial) document.getElementById('defaultMaterial').value = s.defaultMaterial;
+    if (s.limitPd) document.getElementById('limitPd').value = s.limitPd;
+    if (s.vMin) document.getElementById('vMin').value = s.vMin;
+    if (s.vMax) document.getElementById('vMax').value = s.vMax;
+    if (s.projectRef) document.getElementById('projectRef').value = s.projectRef;
+    if (s.engineer) document.getElementById('engineer').value = s.engineer;
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ============ INIT ============ */
+document.getElementById('calcDate').value = new Date().toLocaleDateString('en-GB');
+
+['rho','cp','limitPd','vMin','vMax','defaultMaterial','projectRef','engineer'].forEach(id => {
+  document.getElementById(id).addEventListener('input', renderCircuits);
+});
+document.getElementById('glycol').addEventListener('input', onGlycolChange);
+document.getElementById('addRowBtn').addEventListener('click', () => addCircuit());
+document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
+document.getElementById('exportXlsxBtn').addEventListener('click', exportXLSX);
+
+// Load saved state or seed with a sample row
+if (!loadFromLocalStorage() || circuits.length === 0) {
+  addCircuit({ ref: 'AHU-01 Cooling Coil', mode: 'fromKw', kw: 75, dT: 6, length: 45, fittings: 35, isIndex: true, consumerLoad: 35 });
+  addCircuit({ ref: 'FCU Riser North',     mode: 'fromFlow', lps: 1.2, dT: 6, length: 80, fittings: 30, isIndex: true, consumerLoad: 20 });
+  addCircuit({ ref: 'FCU Riser South',     mode: 'fromKw', kw: 30, dT: 6, length: 55, fittings: 30, isIndex: false, consumerLoad: 20 });
+}
+
+onGlycolChange();
+</script>
+</body>
+</html>
