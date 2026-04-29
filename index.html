@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -114,6 +115,10 @@
     header .title-block .sub { font-size: 10px; letter-spacing: 2px; }
     header .limit-badge { font-size: 10px; padding: 4px 10px; }
     header .brand-mark { width: 32px; height: 32px; font-size: 16px; }
+
+    /* Pump panel responsive */
+    #pumpFinalGrid { grid-template-columns: 1fr 1fr !important; }
+    #pumpComponentGrid { grid-template-columns: 1fr !important; }
 
     /* Stack project bar */
     .project-bar { flex-direction: column; align-items: stretch; gap: 10px; padding: 14px; }
@@ -494,6 +499,7 @@
     font-size: 17px;
     color: var(--black);
     background: rgba(122,209,228,0.14);
+    min-width: 180px;
   }
 
   .circuits-table input[type=number],
@@ -778,7 +784,6 @@
       <input type="text" id="calcDate" readonly>
     </div>
     <div class="toolbar">
-      <button class="btn btn-secondary" id="addRowBtn">+ Add Circuit</button>
       <button class="btn" id="exportCsvBtn">Export CSV</button>
       <button class="btn btn-primary" id="exportXlsxBtn">Export Excel</button>
     </div>
@@ -858,6 +863,27 @@
         </div>
       </div>
 
+      <div class="field">
+        <label>Pipe Condition <span class="unit">(adjusts roughness)</span></label>
+        <select id="pipeCondition" onchange="renderCircuits()">
+          <option value="new" selected>New / clean (design)</option>
+          <option value="used">In service — light scaling</option>
+          <option value="corroded">Older / corroded</option>
+          <option value="custom">Custom roughness</option>
+        </select>
+      </div>
+
+      <div class="row2" id="customRoughnessRow" style="display:none">
+        <div class="field">
+          <label>Carbon roughness <span class="unit">mm</span></label>
+          <input type="number" id="customRoughCarbon" value="0.046" step="0.001" min="0" oninput="renderCircuits()">
+        </div>
+        <div class="field">
+          <label>Stainless roughness <span class="unit">mm</span></label>
+          <input type="number" id="customRoughStainless" value="0.015" step="0.001" min="0" oninput="renderCircuits()">
+        </div>
+      </div>
+
       <div style="font-size:13px; color:var(--ink-soft); margin-top:12px; padding:12px 14px; background:var(--off-white); border-left:3px solid var(--brand-blue); border-radius:2px; line-height:1.6">
         <strong style="color:var(--ink)">Recommendation logic:</strong> first standard size where Pa/m ≤ limit <em>and</em> velocity falls inside the defined range.
       </div>
@@ -887,7 +913,7 @@
             </div>
           </div>
           <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:8px">
-            Typical LLH sizing: velocity 0.1–0.4 m/s · pressure drop &lt;30 Pa/m · length typically 0.5–2 m
+            Typical LLH sizing: velocity 0.1–0.4 m/s · pressure drop &lt;30 Pa/m · header length typically 0.5–2 m
           </div>
         </div>
       </div>
@@ -897,7 +923,8 @@
   <!-- Circuits Table -->
   <div class="card circuits-card">
     <div class="card-title">
-      Circuits <span class="hint" id="circuitCountHint">0 circuits</span>
+      <span>Circuits <span class="hint" id="circuitCountHint" style="margin-left:8px">0 circuits</span></span>
+      <button class="btn btn-primary" id="addRowBtn" style="font-size:11px;padding:7px 14px">+ Add Circuit</button>
     </div>
 
     <div class="circuits-wrap">
@@ -926,11 +953,16 @@
             <th class="derived">Pa/m</th>
             <th class="derived">Pipe Loss</th>
             <th class="derived">Total Loss</th>
+            <th class="derived" title="Pipe + water weight per metre, and total mass over straight length">Weight &amp; Volume</th>
             <th class="derived">Status</th>
           </tr>
         </thead>
         <tbody id="circuitsBody"></tbody>
       </table>
+    </div>
+
+    <div style="margin-top:12px">
+      <button class="btn btn-secondary" id="addRowBtn2" style="width:100%;padding:12px;font-size:12px">+ Add Another Circuit</button>
     </div>
 
     <div style="font-size:13px; color:var(--ink-soft); margin-top:14px; padding:14px 16px; background:var(--off-white); border-left:3px solid var(--brand-blue); border-radius:2px; line-height:1.65">
@@ -973,6 +1005,50 @@
         <div class="r-label">Sum Losses</div>
         <div class="r-value" id="t-sumloss">0.0</div>
         <div class="r-unit">kPa · all circuits</div>
+      </div>
+    </div>
+
+    <!-- Weight & Volume Summary Panel -->
+    <div style="margin-top:18px;background:var(--white);border:1px solid var(--line);border-radius:4px;padding:18px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--brand-blue)">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink)">System Weight &amp; Volume Summary</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="margin:0;font-size:11px;letter-spacing:0.5px">Lagging/Cladding/Fittings Uplift <span class="unit">%</span></label>
+          <input type="number" id="weightUplift" value="20" step="5" min="0" max="100" oninput="renderCircuits()" style="width:70px;padding:6px 8px;font-size:13px">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+        <div class="total-block" style="background:var(--white);color:var(--ink);border:1px solid var(--line-strong)">
+          <div class="r-label" style="color:var(--muted)">Pipe Metal</div>
+          <div class="r-value" id="w-pipe" style="color:var(--ink)">0</div>
+          <div class="r-unit" style="color:var(--muted)">kg dry</div>
+        </div>
+        <div class="total-block" style="background:var(--white);color:var(--ink);border:1px solid var(--line-strong)">
+          <div class="r-label" style="color:var(--muted)">Fluid Volume</div>
+          <div class="r-value" id="w-vol" style="color:var(--ink)">0</div>
+          <div class="r-unit" style="color:var(--muted)">litres</div>
+        </div>
+        <div class="total-block" style="background:var(--white);color:var(--ink);border:1px solid var(--line-strong)">
+          <div class="r-label" style="color:var(--muted)">Fluid Mass</div>
+          <div class="r-value" id="w-water" style="color:var(--ink)">0</div>
+          <div class="r-unit" style="color:var(--muted)">kg</div>
+        </div>
+        <div class="total-block" style="background:var(--white);color:var(--ink);border:1px solid var(--line-strong)">
+          <div class="r-label" style="color:var(--muted)">Filled Pipework</div>
+          <div class="r-value" id="w-filled" style="color:var(--ink)">0</div>
+          <div class="r-unit" style="color:var(--muted)">kg (pipe + fluid)</div>
+        </div>
+        <div class="total-block" style="background:var(--brand-blue-dark);border:1px solid var(--brand-blue)">
+          <div class="r-label">Design Weight <span style="color:rgba(255,255,255,0.5);font-size:9px">(+<span id="w-upliftPct">20</span>%)</span></div>
+          <div class="r-value" id="w-design">0</div>
+          <div class="r-unit">kg installed</div>
+        </div>
+      </div>
+
+      <div style="font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6;padding:10px 14px;background:var(--off-white);border-left:3px solid var(--brand-blue);border-radius:2px">
+        <strong style="color:var(--ink)">Design Weight = (Pipe + Fluid) × (1 + uplift%).</strong>
+        The uplift covers lagging/insulation, cladding, valves, flanges, brackets, and small fittings. Defaults to 20% &mdash; increase to 25–30% for plantrooms with dense fittings, or reduce to 10–15% for clean straight runs without insulation. Use the resulting figure for structural support load assessment, lifting plans, and roof load checks.
       </div>
     </div>
   </div>
@@ -1078,21 +1154,26 @@
         </div>
 
         <!-- Final pump duty — large highlighted -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
-          <div style="background:var(--brand-blue);border-radius:3px;padding:16px 18px;text-align:center">
+        <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:10px" id="pumpFinalGrid">
+          <div style="background:var(--brand-blue);border-radius:3px;padding:14px 14px;text-align:center">
             <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--black);margin-bottom:6px">Design Head</div>
-            <div style="font-family:'Barlow Condensed',sans-serif;font-size:38px;font-weight:900;color:var(--black);line-height:1" id="ps-finalKpa">—</div>
-            <div style="font-size:12px;color:var(--brand-blue-dark);font-weight:600;margin-top:4px">kPa</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:900;color:var(--black);line-height:1" id="ps-finalKpa">—</div>
+            <div style="font-size:11px;color:var(--brand-blue-dark);font-weight:700;margin-top:4px">kPa</div>
           </div>
-          <div style="background:var(--brand-blue);border-radius:3px;padding:16px 18px;text-align:center">
+          <div style="background:var(--brand-blue);border-radius:3px;padding:14px 14px;text-align:center">
             <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--black);margin-bottom:6px">Design Head</div>
-            <div style="font-family:'Barlow Condensed',sans-serif;font-size:38px;font-weight:900;color:var(--black);line-height:1" id="ps-finalMH">—</div>
-            <div style="font-size:12px;color:var(--brand-blue-dark);font-weight:600;margin-top:4px">m H₂O</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:900;color:var(--black);line-height:1" id="ps-finalBar">—</div>
+            <div style="font-size:11px;color:var(--brand-blue-dark);font-weight:700;margin-top:4px">bar</div>
           </div>
-          <div style="background:rgba(122,209,228,0.12);border:1px solid rgba(122,209,228,0.3);border-radius:3px;padding:16px 18px;text-align:center">
+          <div style="background:var(--brand-blue);border-radius:3px;padding:14px 14px;text-align:center">
+            <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--black);margin-bottom:6px">Design Head</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:900;color:var(--black);line-height:1" id="ps-finalMH">—</div>
+            <div style="font-size:11px;color:var(--brand-blue-dark);font-weight:700;margin-top:4px">m H₂O</div>
+          </div>
+          <div style="background:rgba(122,209,228,0.12);border:1px solid rgba(122,209,228,0.3);border-radius:3px;padding:14px 14px;text-align:center">
             <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--brand-blue);margin-bottom:6px">Design Flow</div>
-            <div style="font-family:'Barlow Condensed',sans-serif;font-size:38px;font-weight:900;color:var(--white);line-height:1" id="ps-finalFlow">—</div>
-            <div style="font-size:12px;color:rgba(255,255,255,0.7);font-weight:500;margin-top:4px">l/s (<span id="ps-finalM3h">—</span> m³/h)</div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:900;color:var(--white);line-height:1" id="ps-finalFlow">—</div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.75);font-weight:600;margin-top:4px">l/s (<span id="ps-finalM3h">—</span> m³/h)</div>
           </div>
         </div>
 
@@ -1113,39 +1194,147 @@
 <div class="toast" id="toast">Copied</div>
 
 <script>
-/* ============ PIPE LIBRARIES (up to 450mm) ============ */
-const COPPER = [
-  ['8mm',8.0,0.6],['10mm',10.0,0.6],['12mm',12.0,0.6],['15mm',15.0,0.7],
-  ['22mm',22.0,0.9],['28mm',28.0,0.9],['35mm',35.0,1.2],['42mm',42.0,1.2],
-  ['54mm',54.0,1.2],['67mm',66.7,1.5],['76mm',76.1,1.5],['108mm',108.0,1.5],
-  ['133mm',133.0,2.0],['159mm',159.0,2.0],['219mm',219.1,2.5],
-  ['267mm',267.0,3.0],['318mm',318.0,3.0],
-];
+// Carbon Steel — BS EN 10255 medium grade (DN sizes with actual OD/wall)
+// DN8-DN150 are BS EN 10255; DN200+ are BS EN 10220 / DIN 2448 line pipe sizes
 const CARBON = [
-  ['8mm',13.5,2.3],['10mm',17.2,2.3],['15mm',21.3,2.6],['20mm',26.9,2.6],
-  ['25mm',33.7,3.2],['32mm',42.4,3.2],['40mm',48.3,3.2],['50mm',60.3,3.6],
-  ['65mm',76.1,3.6],['80mm',88.9,4.0],['100mm',114.3,4.5],['125mm',139.7,5.0],
-  ['150mm',168.3,5.0],['200mm',219.1,6.3],['250mm',273.0,6.3],['300mm',323.9,7.1],
-  ['350mm',355.6,8.0],['400mm',406.4,8.8],['450mm',457.0,10.0],['500mm',508.0,11.0],
-  ['550mm',559.0,12.5],['600mm',610.0,12.5],['650mm',660.0,14.2],['700mm',711.0,14.2],
-  ['750mm',762.0,15.9],['800mm',813.0,15.9],
+  // [DN label, OD mm, wall mm]
+  ['DN8',   13.5, 2.30],   // ID 8.9
+  ['DN10',  17.2, 2.30],   // ID 12.6
+  ['DN15',  21.3, 2.65],   // ID 16.0
+  ['DN20',  26.9, 2.65],   // ID 21.6
+  ['DN25',  33.7, 3.25],   // ID 27.2
+  ['DN32',  42.4, 3.25],   // ID 35.9
+  ['DN40',  48.3, 3.25],   // ID 41.8
+  ['DN50',  60.3, 3.65],   // ID 53.0
+  ['DN65',  76.1, 3.65],   // ID 68.8
+  ['DN80',  88.9, 4.05],   // ID 80.8
+  ['DN100', 114.3, 4.50],  // ID 105.3
+  ['DN125', 139.7, 4.85],  // ID 130.0
+  ['DN150', 165.1, 4.85],  // ID 155.4 — BS EN 10255 uses 165.1 OD for DN150
+  ['DN200', 219.1, 6.30],  // ID 206.5
+  ['DN250', 273.0, 6.30],  // ID 260.4
+  ['DN300', 323.9, 7.10],  // ID 309.7
+  ['DN350', 355.6, 8.00],  // ID 339.6
+  ['DN400', 406.4, 8.80],  // ID 388.8
+  ['DN450', 457.0, 10.0],  // ID 437.0
+  ['DN500', 508.0, 11.0],  // ID 486.0
+  ['DN550', 559.0, 12.5],  // ID 534.0
+  ['DN600', 610.0, 12.5],  // ID 585.0
+  ['DN650', 660.0, 14.2],  // ID 631.6
+  ['DN700', 711.0, 14.2],  // ID 682.6
+  ['DN750', 762.0, 15.9],  // ID 730.2
+  ['DN800', 813.0, 15.9],  // ID 781.2
 ];
+
+// Stainless Steel — DIN/EN ISO 1127 with DN nomenclature, schedule 10S typical for HVAC
 const STAINLESS = [
-  ['8mm',8.0,0.8],['10mm',10.0,0.8],['12mm',12.0,1.0],['15mm',15.0,1.0],
-  ['22mm',22.0,1.0],['28mm',28.0,1.2],['35mm',35.0,1.2],['42mm',42.0,1.2],
-  ['54mm',54.0,1.5],['76mm',76.1,1.5],['108mm',108.0,2.0],['133mm',133.0,2.0],
-  ['159mm',159.0,2.0],['219mm',219.1,2.5],['273mm',273.0,3.0],
-  ['323mm',323.9,3.0],['406mm',406.4,4.0],['457mm',457.0,4.0],['508mm',508.0,5.0],
-  ['610mm',610.0,5.0],['711mm',711.0,6.0],['813mm',813.0,6.0],
+  ['DN8',   13.7, 1.65],
+  ['DN10',  17.1, 1.65],
+  ['DN15',  21.3, 2.11],
+  ['DN20',  26.7, 2.11],
+  ['DN25',  33.4, 2.77],
+  ['DN32',  42.2, 2.77],
+  ['DN40',  48.3, 2.77],
+  ['DN50',  60.3, 2.77],
+  ['DN65',  73.0, 3.05],
+  ['DN80',  88.9, 3.05],
+  ['DN100', 114.3, 3.05],
+  ['DN125', 141.3, 3.40],
+  ['DN150', 168.3, 3.40],
+  ['DN200', 219.1, 3.76],
+  ['DN250', 273.0, 4.19],
+  ['DN300', 323.9, 4.57],
+  ['DN350', 355.6, 6.35],
+  ['DN400', 406.4, 6.35],
+  ['DN450', 457.0, 6.35],
+  ['DN500', 508.0, 6.35],
+  ['DN600', 610.0, 6.35],
+  ['DN700', 711.0, 7.92],
+  ['DN800', 813.0, 7.92],
 ];
+
+// Copper — BS EN 1057 R250 (Table X — most common), labelled by traditional nominal mm size
+// Copper retains its nominal mm OD label (15mm, 22mm etc.) since that's universal trade convention
+const COPPER = [
+  ['8mm',   8.0,  0.6],
+  ['10mm',  10.0, 0.6],
+  ['12mm',  12.0, 0.6],
+  ['15mm',  15.0, 0.7],
+  ['22mm',  22.0, 0.9],
+  ['28mm',  28.0, 0.9],
+  ['35mm',  35.0, 1.2],
+  ['42mm',  42.0, 1.2],
+  ['54mm',  54.0, 1.2],
+  ['67mm',  66.7, 1.5],
+  ['76mm',  76.1, 1.5],
+  ['108mm', 108.0, 1.5],
+  ['133mm', 133.0, 2.0],
+  ['159mm', 159.0, 2.0],
+  ['219mm', 219.1, 2.5],
+  ['267mm', 267.0, 3.0],
+  ['318mm', 318.0, 3.0],
+];
+
+// MLCP — generic representative sizes (specific manufacturers like Hep2O / Polyplumb / Uponor differ slightly)
 const MLCP = [
-  ['12mm',12.0,1.5],['16mm',16.0,2.0],['20mm',20.0,2.0],['25mm',25.0,2.5],
-  ['32mm',32.0,3.0],['40mm',40.0,3.5],['50mm',50.0,4.0],['63mm',63.0,4.5],
-  ['75mm',75.0,5.0],['90mm',90.0,6.0],['110mm',110.0,7.0],
+  ['12mm',  12.0, 1.5],
+  ['16mm',  16.0, 2.0],
+  ['20mm',  20.0, 2.0],
+  ['25mm',  25.0, 2.5],
+  ['32mm',  32.0, 3.0],
+  ['40mm',  40.0, 3.5],
+  ['50mm',  50.0, 4.0],
+  ['63mm',  63.0, 4.5],
+  ['75mm',  75.0, 5.0],
+  ['90mm',  90.0, 6.0],
+  ['110mm', 110.0, 7.0],
 ];
 
 const PIPES = { copper: COPPER, carbon: CARBON, stainless: STAINLESS, mlcp: MLCP };
-const ROUGHNESS = { copper: 0.0000015, carbon: 0.000046, stainless: 0.000015, mlcp: 0.000007 };
+
+// Material densities (kg/m³) — for pipe metalwork weight
+const MATERIAL_DENSITY = {
+  carbon:    7850,   // mild steel
+  stainless: 8000,   // 316
+  copper:    8960,
+  mlcp:      940,    // representative — multilayer composite
+};
+
+// Calculate pipe linear weights
+//   pipe_kg_per_m = ρ_material × cross-sectional area of metal
+//   water_kg_per_m = ρ_fluid × cross-sectional area of bore
+function calcPipeWeights(od_mm, wall_mm, material, fluid_rho) {
+  const od_m   = od_mm / 1000;
+  const wall_m = wall_mm / 1000;
+  const id_m   = od_m - 2 * wall_m;
+  const area_metal = Math.PI * (od_m * od_m - id_m * id_m) / 4;
+  const area_bore  = Math.PI * id_m * id_m / 4;
+  const rho_mat = MATERIAL_DENSITY[material] || 7850;
+  return {
+    pipe_kg_per_m:   rho_mat * area_metal,    // kg/m of bare pipe
+    water_kg_per_m:  fluid_rho * area_bore,   // kg/m of water/glycol fill
+    water_l_per_m:   area_bore * 1000,        // litres/m
+  };
+}
+// Roughness presets in metres, by condition and material
+const ROUGHNESS_PRESETS = {
+  new:      { copper: 0.0000015, carbon: 0.000046, stainless: 0.000015, mlcp: 0.000007 },
+  used:     { copper: 0.000003,  carbon: 0.00012,  stainless: 0.00003,  mlcp: 0.000007 },
+  corroded: { copper: 0.000005,  carbon: 0.0005,   stainless: 0.00006,  mlcp: 0.000007 },
+};
+
+function getRoughness(material) {
+  const cond = document.getElementById('pipeCondition');
+  const condition = cond ? cond.value : 'new';
+  if (condition === 'custom') {
+    const carbonR    = (parseFloat(document.getElementById('customRoughCarbon').value)    || 0.046) / 1000;
+    const stainlessR = (parseFloat(document.getElementById('customRoughStainless').value) || 0.015) / 1000;
+    if (material === 'carbon')    return carbonR;
+    if (material === 'stainless') return stainlessR;
+    return ROUGHNESS_PRESETS.new[material] || 0.000046;
+  }
+  return (ROUGHNESS_PRESETS[condition] && ROUGHNESS_PRESETS[condition][material]) || 0.000046;
+}
 const MAT_LABEL = { carbon: 'Carbon Steel', copper: 'Copper', stainless: 'Stainless 316', mlcp: 'MLCP' };
 
 const GLYCOL_TABLE = {
@@ -1163,7 +1352,7 @@ function calcPD(vflow_m3s, id_m, material) {
   const rho = parseFloat(document.getElementById('rho').value);
   const mu = currentViscosity();
   const Re = rho * v * id_m / mu;
-  const eps = ROUGHNESS[material] || 0.000046;
+  const eps = getRoughness(material);
   const relRough = eps / id_m;
   let f;
   if (Re < 2300) f = 64 / Math.max(Re, 1);
@@ -1193,6 +1382,7 @@ function newCircuit(overrides = {}) {
     isIndex: overrides.isIndex ?? false,
     consumerLoad: overrides.consumerLoad ?? 0,
     isLLH: overrides.isLLH ?? false,
+    sizeOverride: overrides.sizeOverride ?? 0, // step offset from auto-recommendation
   };
 }
 
@@ -1260,12 +1450,22 @@ function calculateCircuit(c) {
   // For LLH circuits: select the FIRST pipe where velocity drops to or below the LLH limit.
   // This is the proper oversize logic — we want bigger pipe to slow flow down, not smaller.
   let recommended;
+  let autoRecommended;
   if (llhActive) {
-    // Find smallest pipe where velocity is at or below the LLH max — this is the right LLH size
     const llhPick = rows.find(r => r.v <= V_MAX);
-    recommended = llhPick || rows[rows.length - 1] || null;
+    autoRecommended = llhPick || rows[rows.length - 1] || null;
   } else {
-    recommended = firstOk || firstPDOk || null;
+    autoRecommended = firstOk || firstPDOk || null;
+  }
+
+  // Apply manual size override (up/down step from auto-recommendation)
+  const offset = parseInt(c.sizeOverride) || 0;
+  if (autoRecommended && offset !== 0) {
+    const autoIdx = rows.indexOf(autoRecommended);
+    const newIdx = Math.max(0, Math.min(rows.length - 1, autoIdx + offset));
+    recommended = rows[newIdx];
+  } else {
+    recommended = autoRecommended;
   }
 
   // Total pressure loss for the recommended pipe
@@ -1278,6 +1478,25 @@ function calculateCircuit(c) {
   const totalLoss_kPa = pipeLoss_kPa + consumerLoad;
   const totalLoss_Pa = totalLoss_kPa * 1000;
   const totalLoss_mH2O = totalLoss_Pa / (rho * 9.81);
+
+  // Weight & volume calculations — based on straight pipe length only (not equivalent length)
+  // Lagging/cladding/fittings allowance is applied as a 20% uplift on totals at the end
+  let weights = {
+    pipe_kg_per_m: 0, water_kg_per_m: 0, water_l_per_m: 0,
+    pipe_kg_total: 0, water_kg_total: 0, water_l_total: 0,
+    combined_kg_per_m: 0, combined_kg_total: 0,
+  };
+  if (recommended) {
+    const w = calcPipeWeights(recommended.od, recommended.wall, material, rho);
+    weights.pipe_kg_per_m  = w.pipe_kg_per_m;
+    weights.water_kg_per_m = w.water_kg_per_m;
+    weights.water_l_per_m  = w.water_l_per_m;
+    weights.pipe_kg_total  = w.pipe_kg_per_m * length;
+    weights.water_kg_total = w.water_kg_per_m * length;
+    weights.water_l_total  = w.water_l_per_m  * length;
+    weights.combined_kg_per_m = w.pipe_kg_per_m + w.water_kg_per_m;
+    weights.combined_kg_total = weights.pipe_kg_total + weights.water_kg_total;
+  }
 
   let status;
   if (llhActive) {
@@ -1292,10 +1511,12 @@ function calculateCircuit(c) {
 
   return {
     kw, mdot, vflow_ls, vflow_m3h, dT,
-    recommended, status, allRows: rows, limit: LIMIT,
+    recommended, autoRecommended, status, allRows: rows, limit: LIMIT,
     length, fittings, effectiveLength, consumerLoad,
     pipeLoss_kPa, totalLoss_kPa, totalLoss_mH2O,
     llhActive, vMaxUsed: V_MAX, materialUsed: material,
+    sizeOverride: offset,
+    weights,
   };
 }
 
@@ -1306,7 +1527,7 @@ function renderCircuits() {
 
   if (circuits.length === 0) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="21" style="text-align:center;padding:32px;color:var(--ink-soft);font-style:italic;font-size:15px;display:table-cell">
+    tr.innerHTML = `<td colspan="22" style="text-align:center;padding:32px;color:var(--ink-soft);font-style:italic;font-size:15px;display:table-cell">
       No circuits yet &mdash; tap <strong style="color:var(--brand-blue-deep);font-style:normal">+ Add Circuit</strong> to start.
     </td>`;
     tbody.appendChild(tr);
@@ -1314,6 +1535,7 @@ function renderCircuits() {
 
   let totalKw = 0, totalLps = 0, totalMdot = 0, totalM3h = 0;
   let maxLoss_kPa = 0, sumLoss_kPa = 0;
+  let totalPipeKg = 0, totalWaterKg = 0, totalWaterL = 0;
 
   circuits.forEach(c => {
     const result = calculateCircuit(c);
@@ -1331,7 +1553,7 @@ function renderCircuits() {
 
     let statusBadge = '', recText = '&mdash;', velText = '&mdash;', pdText = '&mdash;';
     let kwDerived = '&mdash;', mdotDerived = '&mdash;', lpsDerived = '&mdash;', m3hDerived = '&mdash;';
-    let pipeLossText = '&mdash;', totalLossText = '&mdash;';
+    let pipeLossText = '&mdash;', totalLossText = '&mdash;', weightText = '&mdash;';
 
     if (!result.error) {
       totalKw   += result.kw;
@@ -1350,6 +1572,22 @@ function renderCircuits() {
         sumLoss_kPa += result.totalLoss_kPa;
         if (result.totalLoss_kPa > maxLoss_kPa) maxLoss_kPa = result.totalLoss_kPa;
 
+        // Build size selector with up/down arrows and actual ID display
+        const isOverridden = result.sizeOverride !== 0;
+        const overrideLabel = isOverridden
+          ? '<div style="font-size:10px;color:#c28a00;font-weight:600;letter-spacing:0.5px;margin-top:2px">' + (result.sizeOverride > 0 ? '+' : '') + result.sizeOverride + ' from auto (' + result.autoRecommended.nom + ')</div>'
+          : '';
+        const idDisplay = '<div style="font-size:10px;color:var(--muted);font-weight:500;font-family:\'Inter\',sans-serif;letter-spacing:0.3px;margin-top:1px">ID ' + result.recommended.id_mm.toFixed(1) + 'mm</div>';
+        recText = '<div style="display:flex;flex-direction:column;align-items:center;gap:2px">'
+          + '<div style="display:flex;align-items:center;gap:6px">'
+          +   '<button onclick="updateCircuitField(' + c.id + ',\'sizeOverride\',(parseInt(circuits.find(c=>c.id===' + c.id + ').sizeOverride)||0)-1)" title="Step down one size" style="background:var(--white);border:1px solid var(--line-strong);color:var(--ink);width:22px;height:22px;border-radius:3px;cursor:pointer;font-weight:700;line-height:1;padding:0">−</button>'
+          +   '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px"><span style="font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:17px;color:var(--black);line-height:1">' + result.recommended.nom + '</span>' + idDisplay + '</div>'
+          +   '<button onclick="updateCircuitField(' + c.id + ',\'sizeOverride\',(parseInt(circuits.find(c=>c.id===' + c.id + ').sizeOverride)||0)+1)" title="Step up one size" style="background:var(--white);border:1px solid var(--line-strong);color:var(--ink);width:22px;height:22px;border-radius:3px;cursor:pointer;font-weight:700;line-height:1;padding:0">+</button>'
+          + '</div>'
+          + (isOverridden ? '<button onclick="updateCircuitField(' + c.id + ',\'sizeOverride\',0)" title="Reset to auto-recommendation" style="background:transparent;border:none;color:var(--brand-blue-deep);font-size:10px;cursor:pointer;text-decoration:underline;padding:0;margin-top:2px">reset to auto</button>' : '')
+          + overrideLabel
+          + '</div>';
+
         pipeLossText = result.pipeLoss_kPa.toFixed(1) + ' <span style="font-size:11px;color:var(--muted)">kPa</span>'
           + '<div style="font-size:11px;color:var(--muted)">' + result.effectiveLength.toFixed(1) + ' m eq.</div>';
 
@@ -1358,6 +1596,22 @@ function renderCircuits() {
           : '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + result.totalLoss_mH2O.toFixed(2) + ' m H\u2082O</div>';
         totalLossText = '<strong style="color:var(--brand-blue-deep);font-size:17px">' + result.totalLoss_kPa.toFixed(1) + '</strong>'
           + ' <span style="color:var(--ink-soft);font-size:12px;font-weight:500">kPa</span>' + clStr;
+
+        // Accumulate weight totals (straight length basis)
+        totalPipeKg  += result.weights.pipe_kg_total;
+        totalWaterKg += result.weights.water_kg_total;
+        totalWaterL  += result.weights.water_l_total;
+
+        // Build Weight & Volume cell — combined kg/m + total mass + water litres
+        const w = result.weights;
+        weightText = '<div style="line-height:1.35">'
+          + '<strong style="color:var(--brand-blue-deep);font-size:14px">' + w.combined_kg_per_m.toFixed(1) + '</strong>'
+          + ' <span style="color:var(--muted);font-size:10px">kg/m filled</span>'
+          + '<div style="font-size:10px;color:var(--muted);margin-top:2px">Pipe ' + w.pipe_kg_per_m.toFixed(1) + ' + H\u2082O ' + w.water_kg_per_m.toFixed(2) + ' kg/m</div>'
+          + '<div style="font-size:11px;color:var(--ink-soft);margin-top:3px;padding-top:3px;border-top:1px dashed var(--line)">'
+          +   '<strong>' + w.combined_kg_total.toFixed(1) + ' kg</strong> · <strong>' + w.water_l_total.toFixed(1) + ' L</strong>'
+          + '</div>'
+          + '</div>';
       }
 
       if (result.status === 'ok')                statusBadge = (result.llhActive ? '<span class="badge badge-llh" style="margin-right:4px">LLH</span>' : '') + '<span class="badge badge-rec">✓ OK</span>';
@@ -1395,6 +1649,7 @@ function renderCircuits() {
       + '<td class="derived-cell" data-label="Pa/m">' + pdText + '</td>'
       + '<td class="derived-cell" data-label="Pipe Loss (kPa)">' + pipeLossText + '</td>'
       + '<td class="derived-cell" data-label="Total Loss">' + totalLossText + '</td>'
+      + '<td class="derived-cell" data-label="Weight &amp; Volume">' + weightText + '</td>'
       + '<td data-label="Status">' + statusBadge + '</td>';
 
     tbody.appendChild(tr);
@@ -1408,6 +1663,17 @@ function renderCircuits() {
   document.getElementById('t-maxloss').textContent = maxLoss_kPa.toFixed(1);
   document.getElementById('t-sumloss').textContent = sumLoss_kPa.toFixed(1);
   document.getElementById('circuitCountHint').textContent = circuits.length + ' circuit' + (circuits.length===1?'':'s');
+
+  // Weight totals
+  const upliftPct = parseFloat(document.getElementById('weightUplift').value) || 0;
+  const filledKg = totalPipeKg + totalWaterKg;
+  const designKg = filledKg * (1 + upliftPct / 100);
+  document.getElementById('w-pipe').textContent      = totalPipeKg.toFixed(0);
+  document.getElementById('w-vol').textContent       = totalWaterL.toFixed(0);
+  document.getElementById('w-water').textContent     = totalWaterKg.toFixed(0);
+  document.getElementById('w-filled').textContent    = filledKg.toFixed(0);
+  document.getElementById('w-design').textContent    = designKg.toFixed(0);
+  document.getElementById('w-upliftPct').textContent = upliftPct;
 
   renderPumpPanel();
   saveToLocalStorage();
@@ -1477,6 +1743,7 @@ function renderPumpPanel() {
   document.getElementById('ps-safety').textContent     = safetyAdd.toFixed(1);
   document.getElementById('ps-sfPct').textContent      = safetyPct;
   document.getElementById('ps-finalKpa').textContent   = finalKpa.toFixed(1);
+  document.getElementById('ps-finalBar').textContent   = (finalKpa / 100).toFixed(3);
   document.getElementById('ps-finalMH').textContent    = finalMH.toFixed(2);
   document.getElementById('ps-finalFlow').textContent  = indexLps.toFixed(2);
   document.getElementById('ps-finalM3h').textContent   = indexM3h.toFixed(2);
@@ -1538,10 +1805,11 @@ function buildExportRows() {
 
   const colHeaders = [
     'Reference','Mode','Material','Input kW','Input l/s','ΔT (K)',
-    'Straight Length (m)','Fittings %','Equivalent Length (m)',
+    'Straight Length (m)','Fittings %','Equivalent Length (m)','Consumer Load (kPa)',
     'Mass Flow kg/s','Vol Flow l/s','Vol Flow m³/h','Duty kW',
     'Recommended Size','OD×Wall mm','ID mm','Velocity m/s','Pressure Drop Pa/m','% of Limit',
-    'Total Loss (kPa)','Total Loss (m H₂O)','Total Loss (bar)',
+    'Pipe Loss (kPa)','Total Loss (kPa)','Total Loss (m H₂O)','Total Loss (bar)',
+    'Pipe kg/m','Water kg/m','Filled kg/m','Pipe Total (kg)','Water Total (L)','Water Total (kg)','Filled Total (kg)',
     'Status'
   ];
 
@@ -1549,11 +1817,13 @@ function buildExportRows() {
     const r = calculateCircuit(c);
     const modeLabel = c.mode === 'fromKw' ? 'Size from kW' : 'Size from l/s';
     if (r.error) {
-      return [c.ref, modeLabel, MAT_LABEL[c.material], c.kw, c.lps, c.dT, c.length, c.fittings, '', '', '', '', '', '', '', '', '', '', '', '', '', '', r.error];
+      return [c.ref, modeLabel, MAT_LABEL[c.material], c.kw, c.lps, c.dT, c.length, c.fittings, '', c.consumerLoad,
+              '','','','', '','','','','','', '','','','', '','','','','','','', r.error];
     }
     const rec = r.recommended;
     const pctLim = rec ? ((rec.pd / r.limit) * 100).toFixed(1) : '';
     const status = r.status === 'ok' ? 'OK' : r.status === 'velocity_warn' ? 'Velocity outside range' : 'No fit';
+    const w = r.weights;
     return [
       c.ref, modeLabel, MAT_LABEL[c.material],
       c.mode === 'fromKw' ? c.kw : '',
@@ -1562,6 +1832,7 @@ function buildExportRows() {
       c.length,
       c.fittings,
       r.effectiveLength.toFixed(2),
+      c.consumerLoad,
       r.mdot.toFixed(3),
       r.vflow_ls.toFixed(3),
       r.vflow_m3h.toFixed(2),
@@ -1572,30 +1843,47 @@ function buildExportRows() {
       rec ? rec.v.toFixed(2) : '',
       rec ? rec.pd.toFixed(1) : '',
       pctLim,
+      rec ? r.pipeLoss_kPa.toFixed(2) : '',
       rec ? r.totalLoss_kPa.toFixed(2) : '',
       rec ? r.totalLoss_mH2O.toFixed(2) : '',
       rec ? (r.totalLoss_kPa / 100).toFixed(3) : '',
+      rec ? w.pipe_kg_per_m.toFixed(2) : '',
+      rec ? w.water_kg_per_m.toFixed(2) : '',
+      rec ? w.combined_kg_per_m.toFixed(2) : '',
+      rec ? w.pipe_kg_total.toFixed(1) : '',
+      rec ? w.water_l_total.toFixed(1) : '',
+      rec ? w.water_kg_total.toFixed(1) : '',
+      rec ? w.combined_kg_total.toFixed(1) : '',
       status,
     ];
   });
 
   // Totals row
   let totalKw = 0, totalLps = 0, totalM3h = 0, totalMdot = 0, maxLoss = 0, sumLoss = 0;
+  let totalPipeKg = 0, totalWaterKg = 0, totalWaterL = 0;
   circuits.forEach(c => {
     const r = calculateCircuit(c);
     if (!r.error) {
       totalKw += r.kw; totalLps += r.vflow_ls; totalM3h += r.vflow_m3h; totalMdot += r.mdot;
       if (r.totalLoss_kPa > maxLoss) maxLoss = r.totalLoss_kPa;
       sumLoss += r.totalLoss_kPa;
+      totalPipeKg  += r.weights.pipe_kg_total;
+      totalWaterKg += r.weights.water_kg_total;
+      totalWaterL  += r.weights.water_l_total;
     }
   });
 
+  const upliftPct = parseFloat(document.getElementById('weightUplift').value) || 0;
+  const filledKg = totalPipeKg + totalWaterKg;
+  const designKg = filledKg * (1 + upliftPct / 100);
+
   const totalRow = [
-    'TOTAL','','','','','','','','',
+    'TOTAL','','','','','','','','','',
     totalMdot.toFixed(3), totalLps.toFixed(3), totalM3h.toFixed(2), totalKw.toFixed(2),
     '','','','','','',
-    sumLoss.toFixed(2), '', '',
-    `Max index run: ${maxLoss.toFixed(2)} kPa`
+    '', sumLoss.toFixed(2), '', '',
+    '','','', totalPipeKg.toFixed(1), totalWaterL.toFixed(1), totalWaterKg.toFixed(1), filledKg.toFixed(1),
+    `+${upliftPct}% uplift = ${designKg.toFixed(0)} kg installed · Max index ${maxLoss.toFixed(2)} kPa`
   ];
 
   return { headerMeta, colHeaders, dataRows, totalRow };
@@ -1660,8 +1948,8 @@ function exportXLSX() {
   });
   rowsXml += '</Row>';
 
-  // String column indices in dataRows: 0=Ref, 1=Mode, 2=Material, 13=RecSize, 14=OD×Wall, 22=Status
-  const STRING_COLS = new Set([0, 1, 2, 13, 14, 22]);
+  // String column indices in dataRows: 0=Ref, 1=Mode, 2=Material, 14=RecSize, 15=OD×Wall, 31=Status
+  const STRING_COLS = new Set([0, 1, 2, 14, 15, 31]);
 
   dataRows.forEach(row => {
     rowsXml += '<Row>';
@@ -1758,7 +2046,7 @@ function loadFromLocalStorage() {
     const s = JSON.parse(raw);
     if (s.circuits) {
       circuits = s.circuits.map(c => ({
-        length: 20, fittings: 30, isIndex: false, consumerLoad: 0, isLLH: false,
+        length: 20, fittings: 30, isIndex: false, consumerLoad: 0, isLLH: false, sizeOverride: 0,
         ...c,
       }));
       nextId = s.nextId || circuits.length + 1;
@@ -1781,7 +2069,12 @@ document.getElementById('calcDate').value = new Date().toLocaleDateString('en-GB
   document.getElementById(id).addEventListener('input', renderCircuits);
 });
 document.getElementById('glycol').addEventListener('input', onGlycolChange);
+document.getElementById('pipeCondition').addEventListener('change', e => {
+  document.getElementById('customRoughnessRow').style.display = e.target.value === 'custom' ? 'grid' : 'none';
+  renderCircuits();
+});
 document.getElementById('addRowBtn').addEventListener('click', () => addCircuit());
+document.getElementById('addRowBtn2').addEventListener('click', () => addCircuit());
 document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
 document.getElementById('exportXlsxBtn').addEventListener('click', exportXLSX);
 
