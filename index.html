@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1532,10 +1531,22 @@ function updateCircuitField(id, field, value) {
   if (!c) return;
   c[field] = value;
   // If a sizing-relevant input changed, clear any manual size pick so it re-sizes cleanly.
-  // This guarantees calculations stay correct no matter how many times a line is edited.
   const resetsManualSize = ['mode', 'material', 'kw', 'dT', 'lps', 'isLLH', 'parentId', 'diversity'];
   if (resetsManualSize.includes(field)) {
     c.manualSize = null;
+  }
+  // When a circuit gains a parent, that parent becomes a branch. If the parent is still on
+  // its default 'fromKw' mode (never manually changed), switch it to 'auto' so it sizes
+  // from downstream load. If the user has explicitly chosen a mode, leave it alone.
+  if (field === 'parentId' && value != null) {
+    const parent = circuits.find(x => x.id === value);
+    if (parent && parent.mode === 'fromKw' && !parent._modeTouched) {
+      parent.mode = 'auto';
+    }
+  }
+  // Track when the user explicitly changes a mode so we don't override their choice
+  if (field === 'mode') {
+    c._modeTouched = true;
   }
   renderCircuits();
 }
@@ -1588,20 +1599,26 @@ function calculateCircuit(c) {
   const carriedKw = getCarriedKw(c);
 
   let kw, mdot;
-  if (branch) {
-    // Branch circuit — flow derived from total diversified downstream load
+  // Mode logic:
+  //  - 'fromKw'   : use the entered kW (manual override, works on any circuit)
+  //  - 'fromFlow' : use the entered l/s (manual override, works on any circuit)
+  //  - 'auto'     : branch auto-sizes from diversified downstream load (branches only)
+  // Branches default to auto UNLESS the user has explicitly selected kW or l/s mode.
+  const effectiveMode = (branch && (c.mode === 'auto' || !c.mode)) ? 'auto' : c.mode;
+
+  if (effectiveMode === 'auto') {
     kw = carriedKw;
     if (kw <= 0) return { error: 'No downstream load' };
     mdot = kw / (cp * dT);
-  } else if (c.mode === 'fromKw') {
-    kw = parseFloat(c.kw) || 0;
-    if (kw <= 0) return { error: 'kW must be > 0' };
-    mdot = kw / (cp * dT);
-  } else { // fromFlow
+  } else if (effectiveMode === 'fromFlow') {
     const lps = parseFloat(c.lps) || 0;
     if (lps <= 0) return { error: 'Flow must be > 0' };
     mdot = (lps / 1000) * rho;
     kw = mdot * cp * dT;
+  } else { // fromKw
+    kw = parseFloat(c.kw) || 0;
+    if (kw <= 0) return { error: 'kW must be > 0' };
+    mdot = kw / (cp * dT);
   }
 
   const vflow_m3s = mdot / rho;
@@ -1695,7 +1712,7 @@ function calculateCircuit(c) {
     llhActive, vMaxUsed: V_MAX, materialUsed: material,
     isManual,
     weights,
-    branch, carriedKw,
+    branch, carriedKw, effectiveMode,
   };
 }
 
@@ -1723,15 +1740,23 @@ function renderCircuits() {
     if (c.isLLH)   tr.classList.add('is-llh-row');
     const cIsBranch = isBranch(c);
     if (cIsBranch) tr.classList.add('is-branch-row');
+    const effMode = result.effectiveMode || (cIsBranch ? 'auto' : c.mode);
 
-    // kW input: terminals editable; branches show auto-summed carried load (read-only)
-    const inputA = cIsBranch
-      ? `<span style="color:var(--brand-blue-deep);font-weight:700;font-size:13px" title="Auto-summed from downstream consumers">${getCarriedKw(c).toFixed(1)} <span style="font-size:10px;color:var(--muted);font-weight:500">auto</span></span>`
-      : (c.mode === 'fromKw'
-          ? `<input type="number" value="${c.kw}" step="1" min="0" onchange="updateCircuitField(${c.id},'kw',this.value)">`
-          : `<span style="color:var(--muted);font-size:12px;padding:0 4px">&mdash;</span>`);
+    // kW input (Consumer kW column):
+    //  - auto mode (branch default): show carried load, read-only
+    //  - fromKw mode: editable kW input (works on branches too, as a manual override)
+    //  - fromFlow mode: dash
+    let inputA;
+    if (effMode === 'auto') {
+      inputA = `<span style="color:var(--brand-blue-deep);font-weight:700;font-size:13px" title="Auto-summed from downstream consumers">${getCarriedKw(c).toFixed(1)} <span style="font-size:10px;color:var(--muted);font-weight:500">auto</span></span>`;
+    } else if (effMode === 'fromKw') {
+      inputA = `<input type="number" value="${c.kw}" step="1" min="0" onchange="updateCircuitField(${c.id},'kw',this.value)">`;
+    } else {
+      inputA = `<span style="color:var(--muted);font-size:12px;padding:0 4px">&mdash;</span>`;
+    }
 
-    const inputB = (!cIsBranch && c.mode === 'fromFlow')
+    // l/s input (Flow column): only in fromFlow mode
+    const inputB = (effMode === 'fromFlow')
       ? `<input type="number" value="${c.lps}" step="0.1" min="0" onchange="updateCircuitField(${c.id},'lps',this.value)">`
       : `<span style="color:var(--muted);font-size:12px;padding:0 4px">&mdash;</span>`;
 
@@ -1831,9 +1856,10 @@ function renderCircuits() {
       + '<td class="td-ref" data-label="Reference"><input type="text" value="' + c.ref.replace(/"/g,'&quot;') + '" onchange="updateCircuitField(' + c.id + ',\'ref\',this.value)"></td>'
       + '<td data-label="Consumer name"><input type="text" value="' + (c.consumerName||'').replace(/"/g,'&quot;') + '" placeholder="AHU / FCU / Bath" onchange="updateCircuitField(' + c.id + ',\'consumerName\',this.value)" style="min-width:110px"></td>'
       + '<td data-label="Feeds from">' + parentSelect + '</td>'
-      + '<td data-label="Mode"><select class="mode-select" onchange="updateCircuitField(' + c.id + ',\'mode\',this.value)"' + (cIsBranch ? ' disabled title="Branches size from downstream load"' : '') + '>'
-      + '<option value="fromKw"' + (c.mode==='fromKw'?' selected':'') + '>Size from kW</option>'
-      + '<option value="fromFlow"' + (c.mode==='fromFlow'?' selected':'') + '>Size from l/s</option></select></td>'
+      + '<td data-label="Mode"><select class="mode-select" onchange="updateCircuitField(' + c.id + ',\'mode\',this.value)">'
+      + (cIsBranch ? '<option value="auto"' + (effMode==='auto'?' selected':'') + '>Auto (downstream)</option>' : '')
+      + '<option value="fromKw"' + (effMode==='fromKw'?' selected':'') + '>Size from kW</option>'
+      + '<option value="fromFlow"' + (effMode==='fromFlow'?' selected':'') + '>Size from l/s</option></select></td>'
       + '<td data-label="Material"><select onchange="updateCircuitField(' + c.id + ',\'material\',this.value)">'
       + '<option value="carbon"'       + (c.material==='carbon'?      ' selected':'') + '>Carbon Steel</option>'
       + '<option value="copper"'       + (c.material==='copper'?      ' selected':'') + '>Copper</option>'
@@ -2547,10 +2573,10 @@ if (!loadFromLocalStorage() || circuits.length === 0) {
   //    └─ Riser South (branch, 80% diversity)
   //        ├─ AHU-02 (terminal 35kW)
   //        └─ Test Bath (terminal 20kW)
-  const main   = newCircuit({ ref: 'Main Flow Header', consumerName: 'Plant Header', dT: 6, length: 8,  fittings: 40, isIndex: false, consumerLoad: 0, material: 'carbon' });
+  const main   = newCircuit({ ref: 'Main Flow Header', consumerName: 'Plant Header', mode: 'auto', dT: 6, length: 8,  fittings: 40, isIndex: false, consumerLoad: 0, material: 'carbon' });
   circuits.push(main);
-  const rNorth = newCircuit({ ref: 'Riser North', consumerName: 'North Zone', parentId: main.id, dT: 6, length: 25, fittings: 30, consumerLoad: 0, material: 'carbon' });
-  const rSouth = newCircuit({ ref: 'Riser South', consumerName: 'South Zone', parentId: main.id, dT: 6, length: 30, fittings: 30, diversity: 80, consumerLoad: 0, material: 'carbon' });
+  const rNorth = newCircuit({ ref: 'Riser North', consumerName: 'North Zone', mode: 'auto', parentId: main.id, dT: 6, length: 25, fittings: 30, consumerLoad: 0, material: 'carbon' });
+  const rSouth = newCircuit({ ref: 'Riser South', consumerName: 'South Zone', mode: 'auto', parentId: main.id, dT: 6, length: 30, fittings: 30, diversity: 80, consumerLoad: 0, material: 'carbon' });
   circuits.push(rNorth, rSouth);
   circuits.push(newCircuit({ ref: 'AHU-01', consumerName: 'AHU-01 Cooling Coil', parentId: rNorth.id, mode: 'fromKw', kw: 40, dT: 6, length: 45, fittings: 35, isIndex: true, consumerLoad: 35, material: 'trubore' }));
   circuits.push(newCircuit({ ref: 'FCU-N',  consumerName: 'FCU North', parentId: rNorth.id, mode: 'fromKw', kw: 15, dT: 6, length: 20, fittings: 30, consumerLoad: 12, material: 'trubore' }));
