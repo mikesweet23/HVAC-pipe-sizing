@@ -772,7 +772,18 @@
   </div>
   <div class="eq">Q = ṁ · cₚ · ΔT</div>
   <div class="limit-badge">Max 300 Pa/m</div>
+  <button id="helpBtn" onclick="toggleHelp()" title="How to use this tool" style="margin-left:12px;background:var(--brand-blue);color:var(--black);border:none;width:34px;height:34px;border-radius:50%;font-weight:900;font-size:17px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;flex-shrink:0" aria-label="Help">?</button>
 </header>
+
+<!-- Help slide-out panel -->
+<div id="helpOverlay" onclick="toggleHelp()" style="display:none;position:fixed;inset:0;background:rgba(10,10,10,0.5);z-index:1000"></div>
+<aside id="helpPanel" style="display:none;position:fixed;top:0;right:0;bottom:0;width:min(520px,92vw);background:var(--white);z-index:1001;box-shadow:-8px 0 40px rgba(0,0,0,0.25);overflow-y:auto;padding:0">
+  <div style="position:sticky;top:0;background:var(--black);color:var(--white);padding:18px 24px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--brand-blue);z-index:2">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:20px;letter-spacing:0.5px;text-transform:uppercase">How to use the Pipework Sizer</div>
+    <button onclick="toggleHelp()" style="background:transparent;border:1px solid rgba(255,255,255,0.35);color:var(--white);width:30px;height:30px;border-radius:4px;cursor:pointer;font-size:16px">×</button>
+  </div>
+  <div id="helpContent" style="padding:24px 26px;font-size:14px;line-height:1.6;color:var(--ink)"></div>
+</aside>
 
 <main>
 
@@ -2585,6 +2596,103 @@ if (!loadFromLocalStorage() || circuits.length === 0) {
 }
 
 onGlycolChange();
+
+/* ============ HELP PANEL ============ */
+function toggleHelp() {
+  const panel = document.getElementById('helpPanel');
+  const overlay = document.getElementById('helpOverlay');
+  const isOpen = panel.style.display === 'block';
+  if (isOpen) {
+    panel.style.display = 'none';
+    overlay.style.display = 'none';
+  } else {
+    if (!document.getElementById('helpContent').dataset.loaded) {
+      document.getElementById('helpContent').innerHTML = HELP_HTML;
+      document.getElementById('helpContent').dataset.loaded = '1';
+    }
+    panel.style.display = 'block';
+    overlay.style.display = 'block';
+  }
+}
+
+const HELP_HTML = `
+<style>
+  #helpContent h3 { font-family:'Barlow Condensed',sans-serif; font-size:17px; text-transform:uppercase; letter-spacing:0.5px; color:var(--brand-blue-deep); margin:22px 0 8px; padding-bottom:5px; border-bottom:2px solid var(--brand-blue); }
+  #helpContent h3:first-child { margin-top:0; }
+  #helpContent p { margin:0 0 10px; }
+  #helpContent ul { margin:0 0 12px; padding-left:20px; }
+  #helpContent li { margin-bottom:6px; }
+  #helpContent strong { color:var(--brand-blue-dark); }
+  #helpContent .tree { background:var(--off-white); border-left:3px solid var(--brand-blue-deep); padding:12px 14px; font-family:monospace; font-size:12px; line-height:1.5; white-space:pre; margin:0 0 12px; overflow-x:auto; }
+  #helpContent .tag-ex { display:inline-block; background:var(--brand-blue); color:var(--black); font-size:10px; font-weight:700; padding:1px 6px; border-radius:2px; }
+  #helpContent .note { background:rgba(122,209,228,0.1); border:1px solid rgba(122,209,228,0.35); border-radius:4px; padding:10px 12px; font-size:13px; margin:0 0 12px; }
+</style>
+
+<h3>What it does</h3>
+<p>Sizes hydronic (water/glycol) pipework across a whole system using <strong>Q = ṁ·cₚ·ΔT</strong>, checks every pipe against the CIBSE 300 Pa/m limit and velocity range, models the system as a proper branch tree, and sizes the circulating pump. Exports to CSV, Excel and a formal PDF report.</p>
+
+<h3>Getting started</h3>
+<p><strong>Top bar</strong> — enter Project Reference, your name, date. These flow through to exports.</p>
+<p><strong>System Fluid Setup</strong> — set glycol % with the slider (0–40%). Density, specific heat and freeze point update automatically.</p>
+<p><strong>Sizing Rules</strong> — the design guardrails: max pressure drop (300 Pa/m), velocity range (0.3–3.0 m/s), pipe condition, default material, and the LLH option.</p>
+
+<h3>Building your system</h3>
+<p>Think of your system as a tree: the plant feeds a main, the main feeds risers, the risers feed terminals. Fill in the white input columns for each circuit:</p>
+<ul>
+  <li><strong>Reference</strong> — short tag, e.g. "Riser North"</li>
+  <li><strong>Consumer name</strong> — free text: "AHU-01", "Test Bath", "FCU"</li>
+  <li><strong>Feeds from</strong> — the parent circuit this connects into. Leave as "Plant / Root" for your main.</li>
+  <li><strong>Mode</strong> — how to size it (see below)</li>
+  <li><strong>Material</strong> — Carbon, Copper, Stainless 304/316, TruBore, MLCP</li>
+  <li><strong>Consumer kW</strong> — for terminals: the heat load. Branches auto-sum this.</li>
+  <li><strong>ΔT, Flow, Diversity %, Length, Fittings %, Consumer load (kPa)</strong> — as applicable</li>
+</ul>
+<p><strong>The three sizing modes:</strong></p>
+<ul>
+  <li><strong>Size from kW</strong> — enter heat load, it calculates flow and picks the pipe</li>
+  <li><strong>Size from l/s</strong> — enter flow rate, it calculates duty and picks the pipe</li>
+  <li><strong>Auto (downstream)</strong> — only on branches; sizes from the summed load of everything feeding into it</li>
+</ul>
+
+<h3>How the tree works</h3>
+<p>When you link circuits with "Feeds from", the tool builds the real hydraulic structure:</p>
+<div class="tree">Main Flow Header ── carries the whole system
+ ├─ Riser North ─── carries its terminals
+ │   ├─ AHU-01
+ │   └─ FCU North
+ └─ Riser South ─── (with diversity if set)
+     ├─ AHU-02
+     └─ Test Bath</div>
+<ul>
+  <li><strong>Terminals</strong> (nothing feeds from them): you enter their kW</li>
+  <li><strong>Branches</strong> (something feeds from them): highlighted with a dark blue edge, they automatically carry the sum of everything below — so the main is always sized for the full system</li>
+</ul>
+<p>Edit any terminal load and the whole tree re-sizes upward automatically.</p>
+<div class="note"><strong>Two totals at the bottom:</strong> <strong>Connected Load</strong> = all terminals added up. <strong>System Duty</strong> = the diversified load the plant actually sees.</div>
+
+<h3>Reading the results</h3>
+<p>The blue columns show mass flow, volume flow, carried kW, the recommended pipe size with actual internal bore (ID), velocity, Pa/m, losses, and weight/volume.</p>
+<p><strong>Status badges:</strong> <span class="tag-ex">✓ OK</span> within limits · <span class="tag-ex">Vel Range</span> velocity outside band (review) · <span class="tag-ex">No Fit</span> no standard size works.</p>
+<p><strong>Manual size override</strong> — use the − / + buttons to step a pipe size up or down and see the effect instantly. Click "reset to auto" to revert. Changing any input re-sizes cleanly, so calculations are always correct however many times you edit.</p>
+
+<h3>Low Loss Header</h3>
+<p>Tick "Design Low Loss Header" in Sizing Rules, then tick the <strong>LLH</strong> box on any circuit. It's oversized so velocity drops to ≤ 0.4 m/s — the correct approach for a primary/secondary decoupler.</p>
+
+<h3>Pump sizing</h3>
+<p>Tick the <strong>Index</strong> box on the most onerous terminal(s) — usually the furthest or most loaded. The Pump panel traces the full path from that terminal back through its parents to the plant, sums the losses, lets you add plant resistances (kPa) and a safety factor, and gives the <strong>design head in bar</strong> (with m H₂O and flow).</p>
+
+<h3>Exporting</h3>
+<ul>
+  <li><strong>Export CSV</strong> — opens anywhere</li>
+  <li><strong>Export Excel</strong> — styled spreadsheet with all data</li>
+  <li><strong>PDF Report</strong> — formal report with auto-written narrative confirming CIBSE compliance, schedule, pump duty and weights. Opens in a new tab; click "Save as PDF / Print".</li>
+</ul>
+
+<h3>Saving your work</h3>
+<p>Everything auto-saves in your browser as you go. This is per-device and per-browser, so it won't sync between your laptop and phone. To share a project, use the exports.</p>
+
+<div class="note" style="margin-top:20px">This tool is a design aid; all outputs must be verified by a competent engineer against project requirements, manufacturers' data and applicable standards before construction.</div>
+`;
 </script>
 </body>
 </html>
