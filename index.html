@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1636,6 +1637,21 @@ function calculateCircuit(c) {
   const vflow_ls  = vflow_m3s * 1000;
   const vflow_m3h = vflow_m3s * 3600;
 
+  // Flow-consistency check: if this is a branch entered MANUALLY (not auto),
+  // compare the manually-entered flow against what its downstream terminals sum to.
+  // A mismatch flags a likely error in the drawing or entry (your "this pipe is wrong" detector).
+  let flowMismatch = null;
+  if (branch && effectiveMode !== 'auto') {
+    const autoMdot = carriedKw / (cp * dT);
+    const autoLps = (autoMdot / rho) * 1000;
+    if (autoLps > 0) {
+      const diffPct = ((vflow_ls - autoLps) / autoLps) * 100;
+      if (Math.abs(diffPct) >= 5) {  // 5% tolerance
+        flowMismatch = { enteredLps: vflow_ls, summedLps: autoLps, diffPct };
+      }
+    }
+  }
+
   const pipes = PIPES[material] || CARBON;
   const rows = pipes.map(p => {
     const [nom, od, wall] = p;
@@ -1723,7 +1739,7 @@ function calculateCircuit(c) {
     llhActive, vMaxUsed: V_MAX, materialUsed: material,
     isManual,
     weights,
-    branch, carriedKw, effectiveMode,
+    branch, carriedKw, effectiveMode, flowMismatch,
   };
 }
 
@@ -1856,6 +1872,13 @@ function renderCircuits() {
       if (result.status === 'ok')                statusBadge = (result.llhActive ? '<span class="badge badge-llh" style="margin-right:4px">LLH</span>' : '') + '<span class="badge badge-rec">✓ OK</span>';
       else if (result.status === 'velocity_warn') statusBadge = (result.llhActive ? '<span class="badge badge-llh" style="margin-right:4px">LLH</span>' : '') + '<span class="badge badge-warn">Vel Range</span>';
       else                                        statusBadge = '<span class="badge badge-warn">No Fit</span>';
+
+      // Flag a manually-entered branch flow that disagrees with its summed downstream terminals
+      if (result.flowMismatch) {
+        const fm = result.flowMismatch;
+        const sign = fm.diffPct > 0 ? '+' : '';
+        statusBadge += '<div style="margin-top:4px"><span class="badge" style="background:rgba(199,68,24,0.12);color:#c74418;border:1px solid rgba(199,68,24,0.4)" title="Entered ' + fm.enteredLps.toFixed(2) + ' l/s but downstream terminals sum to ' + fm.summedLps.toFixed(2) + ' l/s">⚠ Flow ' + sign + fm.diffPct.toFixed(0) + '% vs sum</span></div>';
+      }
     } else {
       statusBadge = '<span class="badge badge-warn">' + result.error + '</span>';
     }
@@ -2574,25 +2597,36 @@ document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
 document.getElementById('exportXlsxBtn').addEventListener('click', exportXLSX);
 document.getElementById('exportPdfBtn').addEventListener('click', exportPDFReport);
 
-// Load saved state or seed with a sample row
+// Load saved state or seed with a sample LPHW system
 if (!loadFromLocalStorage() || circuits.length === 0) {
-  // Build a demonstration tree:
-  //   Main Flow Header (root, carries everything)
-  //    ├─ Riser North (branch)
-  //    │   ├─ AHU-01 (terminal 40kW)
-  //    │   └─ FCU North (terminal 15kW)
-  //    └─ Riser South (branch, 80% diversity)
-  //        ├─ AHU-02 (terminal 35kW)
-  //        └─ Test Bath (terminal 20kW)
-  const main   = newCircuit({ ref: 'Main Flow Header', consumerName: 'Plant Header', mode: 'auto', dT: 6, length: 8,  fittings: 40, isIndex: false, consumerLoad: 0, material: 'carbon' });
-  circuits.push(main);
-  const rNorth = newCircuit({ ref: 'Riser North', consumerName: 'North Zone', mode: 'auto', parentId: main.id, dT: 6, length: 25, fittings: 30, consumerLoad: 0, material: 'carbon' });
-  const rSouth = newCircuit({ ref: 'Riser South', consumerName: 'South Zone', mode: 'auto', parentId: main.id, dT: 6, length: 30, fittings: 30, diversity: 80, consumerLoad: 0, material: 'carbon' });
-  circuits.push(rNorth, rSouth);
-  circuits.push(newCircuit({ ref: 'AHU-01', consumerName: 'AHU-01 Cooling Coil', parentId: rNorth.id, mode: 'fromKw', kw: 40, dT: 6, length: 45, fittings: 35, isIndex: true, consumerLoad: 35, material: 'trubore' }));
-  circuits.push(newCircuit({ ref: 'FCU-N',  consumerName: 'FCU North', parentId: rNorth.id, mode: 'fromKw', kw: 15, dT: 6, length: 20, fittings: 30, consumerLoad: 12, material: 'trubore' }));
-  circuits.push(newCircuit({ ref: 'AHU-02', consumerName: 'AHU-02', parentId: rSouth.id, mode: 'fromKw', kw: 35, dT: 6, length: 40, fittings: 35, consumerLoad: 30, material: 'trubore' }));
-  circuits.push(newCircuit({ ref: 'Test Bath', consumerName: 'Test Bath 3', parentId: rSouth.id, mode: 'fromKw', kw: 20, dT: 6, length: 30, fittings: 30, consumerLoad: 18, material: 'trubore' }));
+  // Sample based on a site-wide LPHW distribution (Fabergé-style layout).
+  // Terminals entered in l/s straight off the drawing; branches auto-sum.
+  // Carbon steel mains, TruBore to terminals. ΔT 20K typical LPHW (82/62 or similar).
+  const DT = 20;
+  const primary = newCircuit({ ref: 'Primary Main', consumerName: 'Plantroom', mode: 'auto', dT: DT, length: 20, fittings: 40, consumerLoad: 0, material: 'carbon' });
+  circuits.push(primary);
+
+  // North distribution leg (ETOH / WWTP / A2 & A6 test baths area)
+  const north = newCircuit({ ref: 'North Distribution', consumerName: 'North Leg', mode: 'auto', parentId: primary.id, dT: DT, length: 45, fittings: 30, consumerLoad: 0, material: 'carbon' });
+  // Atrium riser (Fabergé building / Cheetah / Gemini AHUs)
+  const atrium = newCircuit({ ref: 'Atrium Riser', consumerName: 'Atrium Leg', mode: 'auto', parentId: primary.id, dT: DT, length: 35, fittings: 30, consumerLoad: 0, material: 'carbon' });
+  circuits.push(north, atrium);
+
+  // AHU 20 straight off the primary
+  circuits.push(newCircuit({ ref: 'AHU 20', consumerName: 'AHU 20 Lynx 1', parentId: primary.id, mode: 'fromFlow', lps: 19.31, dT: DT, length: 25, fittings: 35, isIndex: true, consumerLoad: 30, material: 'trubore' }));
+
+  // North terminals
+  circuits.push(newCircuit({ ref: 'WWTP', consumerName: 'WWTP', parentId: north.id, mode: 'fromFlow', lps: 0.6, dT: DT, length: 15, fittings: 30, consumerLoad: 15, material: 'trubore' }));
+  circuits.push(newCircuit({ ref: 'A2 Test Bath', consumerName: 'A2 Test Bath', parentId: north.id, mode: 'fromFlow', lps: 1.19, dT: DT, length: 20, fittings: 30, consumerLoad: 18, material: 'trubore' }));
+  circuits.push(newCircuit({ ref: 'A6 Test Bath', consumerName: 'A6 Test Bath', parentId: north.id, mode: 'fromFlow', lps: 1.19, dT: DT, length: 28, fittings: 30, consumerLoad: 18, material: 'trubore' }));
+
+  // Atrium terminals
+  circuits.push(newCircuit({ ref: 'AHU 12', consumerName: 'AHU 12 Lynx 2', parentId: atrium.id, mode: 'fromFlow', lps: 8.25, dT: DT, length: 30, fittings: 35, consumerLoad: 28, material: 'trubore' }));
+  circuits.push(newCircuit({ ref: 'AHU 14B', consumerName: 'AHU 14B', parentId: atrium.id, mode: 'fromFlow', lps: 2.84, dT: DT, length: 22, fittings: 35, consumerLoad: 22, material: 'trubore' }));
+  circuits.push(newCircuit({ ref: 'A3 Test Bath', consumerName: 'A3 Test Bath', parentId: atrium.id, mode: 'fromFlow', lps: 1.19, dT: DT, length: 26, fittings: 30, consumerLoad: 18, material: 'trubore' }));
+  circuits.push(newCircuit({ ref: 'Process HW', consumerName: 'Process Hot Water', parentId: atrium.id, mode: 'fromFlow', lps: 1.43, dT: DT, length: 24, fittings: 30, consumerLoad: 20, material: 'trubore' }));
+  circuits.push(newCircuit({ ref: 'AHU 1 Gemini', consumerName: 'AHU 1 Gemini', parentId: atrium.id, mode: 'fromFlow', lps: 6.12, dT: DT, length: 40, fittings: 35, consumerLoad: 26, material: 'trubore' }));
+  circuits.push(newCircuit({ ref: 'AHU 2 Gemini', consumerName: 'AHU 2 Gemini', parentId: atrium.id, mode: 'fromFlow', lps: 6.12, dT: DT, length: 42, fittings: 35, consumerLoad: 26, material: 'trubore' }));
 }
 
 onGlycolChange();
