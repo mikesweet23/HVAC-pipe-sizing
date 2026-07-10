@@ -174,6 +174,15 @@
 
   .empty-row td { text-align: center; padding: 36px; color: var(--muted); font-style: italic; }
 
+  /* Tree / index visual cues */
+  .tree-connector { color: var(--brand-blue-deep); font-weight: 700; margin-right: 4px; opacity: 0.55; flex-shrink: 0; }
+  tbody tr.is-branch td { background: rgba(26,86,112,0.045); }
+  tbody tr.is-branch .name-input { font-weight: 700; }
+  tbody tr.is-index td { background: rgba(122,209,228,0.12); }
+  tbody tr.is-index:hover td { background: rgba(122,209,228,0.18); }
+  .idx-running { font-weight: 800; color: var(--brand-blue-deep); }
+  .mini-tag { font-size: 9px; background: rgba(240,165,0,0.15); color: #b37800; border: 1px solid rgba(240,165,0,0.4); padding: 1px 4px; border-radius: 2px; font-weight: 700; vertical-align: middle; }
+
   .add-row-btn {
     width: 100%; padding: 12px; background: var(--off-white); border: none;
     border-top: 1px solid var(--line); color: var(--brand-blue-deep); font-weight: 700;
@@ -292,7 +301,7 @@
   <img class="brand-logo" id="brandLogo" alt="adi Climate Systems">
   <div class="title-block">
     <h1>Pipe Sizer</h1>
-    <div class="sub">Segment Sizing · Hydronic</div>
+    <div class="sub">System &amp; Index · Hydronic</div>
   </div>
   <div class="spacer"></div>
   <button class="help-btn" onclick="toggleHelp()" title="How to use">?</button>
@@ -303,13 +312,13 @@
   <!-- Intro / how it works -->
   <div class="intro">
     <div>
-      <div class="big">List each pipe. Type its flow. Get its size.</div>
-      <p>One row per pipe run. Read the flow straight off your drawing. No linking, no tree — every segment sizes on its own.</p>
+      <div class="big">Build your system top-down. See the whole run.</div>
+      <p>Add your main first, then work outwards — each new row feeds from the one above by default, so the tree builds itself. Tick the index run to watch the pump head build up.</p>
     </div>
     <div class="steps">
-      <div class="step"><span class="n">1</span> Add a row per pipe</div>
+      <div class="step"><span class="n">1</span> Add main, then branches</div>
       <div class="step"><span class="n">2</span> Type flow &amp; length</div>
-      <div class="step"><span class="n">3</span> Tick index run</div>
+      <div class="step"><span class="n">3</span> Tick the index run</div>
       <div class="step"><span class="n">4</span> Read sizes &amp; pump</div>
     </div>
   </div>
@@ -373,6 +382,11 @@
         <option value="corroded">Corroded</option>
       </select>
     </div>
+    <div class="field">
+      <label>LLH max velocity <span class="u">m/s</span></label>
+      <input type="number" id="llhVMax" value="0.4" step="0.05" onchange="recalc()">
+      <div class="hint">Applied to rows ticked LLH</div>
+    </div>
   </div>
 
   <!-- Segments -->
@@ -392,18 +406,25 @@
         <thead>
           <tr>
             <th title="Tick the segments that form the worst-case run to the pump">Index</th>
+            <th title="Low loss header — sizes this run to the LLH max velocity">LLH</th>
             <th>Pipe / Segment</th>
+            <th title="Which pipe this one branches off. Defaults to the row above.">Feeds from</th>
             <th>Flow <span class="u">l/s</span></th>
+            <th title="Temperature difference — carries to the next new row unless changed">ΔT <span class="u">K</span></th>
             <th>Material</th>
             <th>Length <span class="u">m</span></th>
             <th>Fittings <span class="u">%</span></th>
             <th title="Pressure drop across equipment on this segment (AHU coil, valve, etc.)">Equip ΔP <span class="u">kPa</span></th>
+            <th title="Uplift for lagging, cladding and bracketry — per line, default 30%">Buffer <span class="u">%</span></th>
             <th class="derived">Size</th>
             <th class="derived">ID <span class="u">mm</span></th>
             <th class="derived">Velocity <span class="u">m/s</span></th>
             <th class="derived">Pa/m</th>
             <th class="derived">Seg Loss <span class="u">kPa</span></th>
-            <th class="derived">Weight <span class="u">kg</span></th>
+            <th class="derived" title="Running cumulative head along the ticked index path">Index Σ <span class="u">kPa</span></th>
+            <th class="derived" title="Bare pipe metalwork">Pipe <span class="u">kg</span></th>
+            <th class="derived" title="Fluid contents">Water <span class="u">kg</span></th>
+            <th class="derived" title="Filled pipe + buffer % for lagging/cladding/bracketry">Design Wt <span class="u">kg</span></th>
             <th class="derived">Status</th>
             <th></th>
           </tr>
@@ -419,7 +440,7 @@
     <div class="tile"><div class="v" id="t-count">0</div><div class="l">Segments</div></div>
     <div class="tile"><div class="v" id="t-length">0</div><div class="l">Total Length <span class="u2">m</span></div></div>
     <div class="tile"><div class="v" id="t-vol">0</div><div class="l">Fluid Volume <span class="u2">litres</span></div></div>
-    <div class="tile"><div class="v" id="t-weight">0</div><div class="l">Filled Weight <span class="u2">kg</span></div></div>
+    <div class="tile"><div class="v" id="t-weight">0</div><div class="l">Design Weight <span class="u2">kg · incl. buffer</span></div></div>
     <div class="tile"><div class="v" id="t-maxpd">0</div><div class="l">Max Pa/m <span class="u2">any segment</span></div></div>
   </div>
 
@@ -455,26 +476,34 @@
   </div>
   <div class="hp-body">
     <h3>The idea</h3>
-    <p>This tool sizes pipes one segment at a time. Each row is one pipe run. You read the flow off your drawing and type it in — the tool picks the correct size, checks it against CIBSE limits, and works out velocity, pressure drop and weight.</p>
-    <div class="note">No tree, no linking. Every pipe on your drawing already has a flow written on it — just transcribe them, one row each.</div>
+    <p>Each row is one pipe run. You read the flow off your drawing and type it in — the tool picks the correct size, checks it against CIBSE limits, and works out velocity, pressure drop and weight. Rows link into a tree so you can see the whole system and trace the pump's index run.</p>
+    <div class="note">Build top-down: enter your main first, then work outwards. Every new row automatically feeds from the one above, so the tree builds itself — you only change "Feeds from" on the exceptions.</div>
 
     <h3>Step by step</h3>
     <ul>
-      <li><strong>Add a row for each pipe</strong> — click "+ Add pipe".</li>
-      <li><strong>Name it</strong> — whatever's useful: "Plant → Lynx tee", "AHU 20 drop", "A2 Test Bath".</li>
-      <li><strong>Type the flow (l/s)</strong> — straight off the drawing annotation for that segment.</li>
-      <li><strong>Pick the material</strong> — or leave it as the default.</li>
-      <li><strong>Add length (m)</strong> — when you have it. Sizing works without it; length only affects the pressure drop.</li>
-      <li><strong>Fittings %</strong> — uplift for bends/tees/valves (15–25% straight mains, 30–40% busy branches).</li>
-      <li><strong>Equip ΔP (kPa)</strong> — only if there's equipment on that segment (AHU coil, test bath). Leave 0 for plain pipe.</li>
+      <li><strong>Add your main first</strong> — click "+ Add pipe", name it (e.g. "Plant → Lynx tee"), leave Feeds from as "Plant / Root".</li>
+      <li><strong>Add branches and terminals</strong> — each new row feeds from the one above by default. Change "Feeds from" only where the pipe branches off somewhere else.</li>
+      <li><strong>Type the flow (l/s)</strong> — straight off the drawing for that segment.</li>
+      <li><strong>ΔT</strong> — set it once; every new row inherits it until you change one.</li>
+      <li><strong>Material</strong> — same: set once, repeats until you change it.</li>
+      <li><strong>Length, Fittings %, Equip ΔP</strong> — add as you have them.</li>
     </ul>
+
+    <h3>Seeing the system</h3>
+    <p>Rows indent under their parent, so the structure is visible at a glance — the main at the left, branches stepped in beneath it, terminals stepped in further. Branch rows are shown in bold with a faint blue tint.</p>
+
+    <h3>Low Loss Header</h3>
+    <p>Tick the <strong>LLH</strong> box on any row to size that run as a low loss header — it's oversized so velocity drops to the LLH max (default 0.4 m/s, set in the top bar). The correct approach for a primary/secondary decoupler.</p>
 
     <h3>Reading the results</h3>
     <p>The blue columns fill in automatically: recommended <strong>Size</strong> with actual bore (ID), <strong>velocity</strong>, <strong>Pa/m</strong>, segment loss, and weight.</p>
-    <p><strong>Status:</strong> <span style="color:var(--ok);font-weight:700">OK</span> means within Pa/m and velocity limits. <span style="color:var(--warn);font-weight:700">Review</span> means velocity is outside the band. <span style="color:var(--warn);font-weight:700">No fit</span> means no standard size works — raise the Pa/m limit or check the flow.</p>
+    <p><strong>Status:</strong> <span style="color:var(--ok);font-weight:700">OK</span> means within Pa/m and velocity limits. <span style="color:var(--warn);font-weight:700">Review</span> means velocity is outside the band. <span style="color:var(--warn);font-weight:700">No fit</span> means no standard size works.</p>
 
-    <h3>Sizing the pump</h3>
-    <p>Tick the <strong>Index</strong> box on each segment that forms your worst-case route from the plant to the hardest terminal (usually the furthest or highest-flow one). The pump panel adds up those segments' losses, plus any plant/valve/strainer/static resistances you enter, and gives the <strong>duty in bar</strong>.</p>
+    <h3>Weights per line</h3>
+    <p>Each row shows three weights: <strong>Pipe</strong> (bare metalwork), <strong>Water</strong> (fluid contents), and <strong>Design Wt</strong> — the filled pipe plus a per-line <strong>Buffer %</strong> uplift (default 30%) for lagging, cladding and bracketry. Adjust the buffer per row where a run needs more or less. The Design Weight total feeds the tile and the PDF report for structural support and load assessment.</p>
+
+    <h3>Sizing the pump — the index run</h3>
+    <p>Tick the <strong>Index</strong> box on each segment along your worst-case route from the plant to the hardest terminal (usually furthest or highest-flow). Those rows highlight, and the <strong>Index Σ</strong> column shows the head building up cumulatively down the path — so you can watch it climb. The pump panel then adds plant/valve/strainer/static resistances and a safety factor and gives the <strong>duty in bar</strong>.</p>
 
     <h3>Exporting</h3>
     <ul>
@@ -567,27 +596,49 @@ function calcPD(vflow_m3s, id_m, material) {
    ============================================================ */
 let segments = [];
 let nextId = 1;
-const STORAGE_KEY = 'adi_pipesizer_simple_v1';
+const STORAGE_KEY = 'adi_pipesizer_system_v1';
+
+// Sticky defaults — last-used ΔT and material carry to the next new row
+let lastDT = 20;
+let lastMaterial = null; // resolved from defaultMaterial on first use
 
 function newSegment(o = {}) {
+  const mat = o.material || lastMaterial || (document.getElementById('defaultMaterial') ? document.getElementById('defaultMaterial').value : 'carbon');
+  const dT = (o.dT != null) ? o.dT : lastDT;
   return {
     id: nextId++,
     name: o.name || '',
+    parentId: (o.parentId !== undefined) ? o.parentId : null, // null = Plant/Root
     flow: o.flow ?? 1.0,          // l/s
-    material: o.material || document.getElementById('defaultMaterial').value,
+    dT: dT,                        // K — carried for reference/kW display
+    material: mat,
     length: o.length ?? 10,
     fittings: o.fittings ?? 25,
     equipKpa: o.equipKpa ?? 0,
+    bufferPct: o.bufferPct ?? 30,   // uplift % for lagging / cladding / bracketry
+    isLLH: o.isLLH ?? false,
     isIndex: o.isIndex ?? false,
   };
 }
 
-function addSegment(o) {
-  segments.push(newSegment(o));
+function addSegment(o = {}) {
+  // Default "feeds from" to the row above (the last segment added), unless specified
+  if (o.parentId === undefined) {
+    o.parentId = segments.length > 0 ? segments[segments.length - 1].id : null;
+  }
+  const seg = newSegment(o);
+  // Update sticky defaults from what was just created
+  lastDT = seg.dT;
+  lastMaterial = seg.material;
+  segments.push(seg);
   recalc();
 }
 
 function deleteSegment(id) {
+  const del = segments.find(s => s.id === id);
+  const newParent = del ? del.parentId : null;
+  // Reparent orphans to the deleted row's parent so the tree stays intact
+  segments.forEach(s => { if (s.parentId === id) s.parentId = newParent; });
   segments = segments.filter(s => s.id !== id);
   recalc();
 }
@@ -595,10 +646,53 @@ function deleteSegment(id) {
 function updateField(id, field, value) {
   const s = segments.find(s => s.id === id);
   if (!s) return;
-  if (['flow','length','fittings','equipKpa'].includes(field)) value = parseFloat(value) || 0;
-  if (field === 'isIndex') value = !!value;
+  if (['flow','length','fittings','equipKpa','dT','bufferPct'].includes(field)) value = parseFloat(value) || 0;
+  if (field === 'isIndex' || field === 'isLLH') value = !!value;
+  if (field === 'parentId') value = (value === '' ? null : parseInt(value));
   s[field] = value;
+  // Update sticky defaults so subsequent new rows inherit the latest choice
+  if (field === 'dT') lastDT = value;
+  if (field === 'material') lastMaterial = value;
   recalc();
+}
+
+/* ===== TREE HELPERS ===== */
+function getChildren(id) { return segments.filter(s => s.parentId === id); }
+function isBranch(s) { return getChildren(s.id).length > 0; }
+function isDescendant(candidateId, ancestorId) {
+  let cur = segments.find(s => s.id === candidateId);
+  const guard = new Set();
+  while (cur && cur.parentId != null && !guard.has(cur.id)) {
+    guard.add(cur.id);
+    if (cur.parentId === ancestorId) return true;
+    cur = segments.find(s => s.id === cur.parentId);
+  }
+  return false;
+}
+// Depth for indentation (0 = root-level)
+function getDepth(s) {
+  let d = 0, cur = s;
+  const guard = new Set();
+  while (cur && cur.parentId != null && !guard.has(cur.id)) {
+    guard.add(cur.id);
+    cur = segments.find(x => x.id === cur.parentId);
+    d++;
+  }
+  return d;
+}
+// Order segments so children immediately follow their parent (tree/outline order)
+function orderedSegments() {
+  const out = [];
+  const visit = (parentId) => {
+    segments.filter(s => s.parentId === parentId).forEach(s => {
+      out.push(s);
+      visit(s.id);
+    });
+  };
+  visit(null);
+  // Any orphans (parent not found) appended at end
+  segments.forEach(s => { if (!out.includes(s)) out.push(s); });
+  return out;
 }
 
 function clearAll() {
@@ -614,8 +708,9 @@ function sizeSegment(s) {
   if (flow_ls <= 0) return { error: 'Enter flow' };
   const vflow_m3s = flow_ls / 1000;
   const LIMIT = parseFloat(document.getElementById('limitPd').value) || 280;
-  const V_MIN = parseFloat(document.getElementById('vMin').value) || 0.4;
-  const V_MAX = parseFloat(document.getElementById('vMax').value) || 3.0;
+  const llhVmax = parseFloat(document.getElementById('llhVMax').value) || 0.4;
+  const V_MIN = s.isLLH ? 0.05 : (parseFloat(document.getElementById('vMin').value) || 0.4);
+  const V_MAX = s.isLLH ? llhVmax : (parseFloat(document.getElementById('vMax').value) || 3.0);
   const pipes = PIPES[s.material] || CARBON;
 
   const rows = pipes.map(p => {
@@ -627,14 +722,20 @@ function sizeSegment(s) {
     return { nom, od, wall, id_mm, pd, v };
   }).filter(Boolean);
 
-  // First size where Pa/m <= limit AND velocity in band; fall back to first under limit
-  let pick = rows.find(r => r.pd <= LIMIT && r.v >= V_MIN && r.v <= V_MAX);
-  let status = 'ok';
-  if (!pick) {
-    pick = rows.find(r => r.pd <= LIMIT);
-    if (pick) status = 'velocity_warn';
+  let pick, status = 'ok';
+  if (s.isLLH) {
+    // LLH: oversize so velocity drops to <= the LLH max (first size at or below the limit)
+    pick = rows.find(r => r.v <= V_MAX);
+    if (!pick) { pick = rows[rows.length - 1]; status = 'no_fit'; }
+  } else {
+    // Normal: first size where Pa/m <= limit AND velocity in band; fall back to first under limit
+    pick = rows.find(r => r.pd <= LIMIT && r.v >= V_MIN && r.v <= V_MAX);
+    if (!pick) {
+      pick = rows.find(r => r.pd <= LIMIT);
+      if (pick) status = 'velocity_warn';
+    }
+    if (!pick) { pick = rows[rows.length - 1]; status = 'no_fit'; }
   }
-  if (!pick) { pick = rows[rows.length - 1]; status = 'no_fit'; }
 
   // Losses
   const length = parseFloat(s.length) || 0;
@@ -655,11 +756,14 @@ function sizeSegment(s) {
   const waterKg = waterKgM*length;
   const waterL = waterLM*length;
   const filledKg = pipeKg + waterKg;
+  const bufferPct = parseFloat(s.bufferPct)||0;
+  const designKg = filledKg * (1 + bufferPct/100);  // + lagging / cladding / bracketry
 
   return {
     pick, status, id_mm: pick.id_mm, v: pick.v, pd: pick.pd,
     pipeLoss_kPa, equipKpa, segLoss_kPa,
-    pipeKg, waterKg, waterL, filledKg,
+    pipeKg, waterKg, waterL, filledKg, designKg, bufferPct,
+    pipeKgM, waterKgM,
   };
 }
 
@@ -674,42 +778,77 @@ function recalc() {
   body.innerHTML = '';
 
   if (segments.length === 0) {
-    body.innerHTML = '<tr class="empty-row"><td colspan="15">No pipes yet — click <strong>+ Add pipe</strong> to start. One row per pipe run on your drawing.</td></tr>';
+    body.innerHTML = '<tr class="empty-row"><td colspan="22">No pipes yet — click <strong>+ Add pipe</strong> to start. Enter your main first, then work outwards — each new row feeds from the one above by default.</td></tr>';
   }
 
-  let totLength = 0, totVol = 0, totWeight = 0, maxPd = 0;
-  let indexLoss = 0, indexFlow = 0;
+  let totLength = 0, totVol = 0, totPipeKg = 0, totWaterKg = 0, totDesignKg = 0, maxPd = 0;
+  let indexLoss = 0, indexFlow = 0, indexRunning = 0;
 
-  segments.forEach(s => {
+  const ordered = orderedSegments();
+
+  ordered.forEach(s => {
     const r = sizeSegment(s);
     const tr = document.createElement('tr');
+    const branch = isBranch(s);
+    const depth = getDepth(s);
+    if (s.isIndex) tr.classList.add('is-index');
+    if (branch) tr.classList.add('is-branch');
 
     let sizeCell = '<span class="status-warn">—</span>';
-    let idCell='—', velCell='—', pdCell='—', lossCell='—', wtCell='—', statusCell='';
+    let idCell='—', velCell='—', pdCell='—', lossCell='—', idxCell='—', statusCell='';
+    let pipeWtCell='—', waterWtCell='—', designWtCell='—';
 
     if (!r.error) {
       const stCls = r.status==='ok' ? 'status-ok' : 'status-warn';
       const stTxt = r.status==='ok' ? 'OK' : r.status==='velocity_warn' ? 'Review vel.' : 'No fit';
-      sizeCell = '<span class="size-badge">' + r.pick.nom + '</span>';
+      sizeCell = '<span class="size-badge">' + r.pick.nom + '</span>' + (s.isLLH ? ' <span class="mini-tag">LLH</span>' : '');
       idCell = '<span class="num">' + r.id_mm.toFixed(1) + '</span>';
       velCell = '<span class="num">' + r.v.toFixed(2) + '</span>';
       pdCell = '<span class="num">' + r.pd.toFixed(0) + '</span>';
       lossCell = '<span class="num">' + r.segLoss_kPa.toFixed(2) + '</span>';
-      wtCell = '<span class="num">' + r.filledKg.toFixed(0) + '</span>';
+      pipeWtCell = '<span class="num">' + r.pipeKg.toFixed(0) + '</span>';
+      waterWtCell = '<span class="num">' + r.waterKg.toFixed(0) + '</span>';
+      designWtCell = '<span class="num" style="font-weight:700;color:var(--brand-blue-deep)">' + r.designKg.toFixed(0) + '</span>';
       statusCell = '<span class="'+stCls+'">' + stTxt + '</span>';
       totLength += parseFloat(s.length)||0;
       totVol += r.waterL;
-      totWeight += r.filledKg;
+      totPipeKg += r.pipeKg;
+      totWaterKg += r.waterKg;
+      totDesignKg += r.designKg;
       if (r.pd > maxPd) maxPd = r.pd;
-      if (s.isIndex) { indexLoss += r.segLoss_kPa; if ((parseFloat(s.flow)||0) > indexFlow) indexFlow = parseFloat(s.flow)||0; }
+      if (s.isIndex) {
+        indexLoss += r.segLoss_kPa;
+        indexRunning += r.segLoss_kPa;
+        if ((parseFloat(s.flow)||0) > indexFlow) indexFlow = parseFloat(s.flow)||0;
+        idxCell = '<span class="num idx-running">' + indexRunning.toFixed(2) + '</span>';
+      }
     } else {
       statusCell = '<span class="status-warn">'+r.error+'</span>';
     }
 
+    // Indentation for the name cell — visual tree
+    const indentPx = depth * 20;
+    const connector = depth > 0 ? '<span class="tree-connector">└</span>' : '';
+
+    // Parent dropdown — Plant/Root + all valid other segments (not descendants of this one).
+    // Each option shows the segment's flow so the upstream pipe is unmistakable (helps "return to main").
+    let parentOpts = '<option value=""'+(!s.parentId?' selected':'')+'>Plant / Root</option>';
+    segments.forEach(other => {
+      if (other.id === s.id) return;
+      if (isDescendant(other.id, s.id)) return;
+      const nm = other.name || ('Pipe ' + other.id);
+      const fl = (parseFloat(other.flow)||0).toFixed(2);
+      const label = nm + ' (' + fl + ' l/s)';
+      parentOpts += '<option value="'+other.id+'"'+(s.parentId===other.id?' selected':'')+'>'+esc(label)+'</option>';
+    });
+
     tr.innerHTML =
         '<td style="text-align:center"><input type="checkbox" class="idx-check" '+(s.isIndex?'checked':'')+' onchange="updateField('+s.id+',\'isIndex\',this.checked)"></td>'
-      + '<td><input type="text" class="name-input" value="'+esc(s.name)+'" placeholder="e.g. Plant → Lynx tee" onchange="updateField('+s.id+',\'name\',this.value)"></td>'
+      + '<td style="text-align:center"><input type="checkbox" class="idx-check" '+(s.isLLH?'checked':'')+' onchange="updateField('+s.id+',\'isLLH\',this.checked)"></td>'
+      + '<td><div style="display:flex;align-items:center;padding-left:'+indentPx+'px">'+connector+'<input type="text" class="name-input" value="'+esc(s.name)+'" placeholder="e.g. Plant → Lynx tee" onchange="updateField('+s.id+',\'name\',this.value)"></div></td>'
+      + '<td><select onchange="updateField('+s.id+',\'parentId\',this.value)" style="min-width:130px">'+parentOpts+'</select></td>'
       + '<td><input type="number" value="'+s.flow+'" step="0.01" min="0" onchange="updateField('+s.id+',\'flow\',this.value)" style="min-width:75px"></td>'
+      + '<td><input type="number" value="'+s.dT+'" step="1" min="0.1" onchange="updateField('+s.id+',\'dT\',this.value)" style="min-width:55px" title="Repeats on next new row unless changed"></td>'
       + '<td><select onchange="updateField('+s.id+',\'material\',this.value)" style="min-width:120px">'
       +   '<option value="carbon"'+(s.material==='carbon'?' selected':'')+'>Carbon Steel</option>'
       +   '<option value="copper"'+(s.material==='copper'?' selected':'')+'>Copper</option>'
@@ -720,12 +859,16 @@ function recalc() {
       + '<td><input type="number" value="'+s.length+'" step="1" min="0" onchange="updateField('+s.id+',\'length\',this.value)" style="min-width:70px"></td>'
       + '<td><input type="number" value="'+s.fittings+'" step="5" min="0" onchange="updateField('+s.id+',\'fittings\',this.value)" style="min-width:65px"></td>'
       + '<td><input type="number" value="'+s.equipKpa+'" step="1" min="0" onchange="updateField('+s.id+',\'equipKpa\',this.value)" style="min-width:70px"></td>'
+      + '<td><input type="number" value="'+s.bufferPct+'" step="5" min="0" onchange="updateField('+s.id+',\'bufferPct\',this.value)" style="min-width:60px" title="Lagging / cladding / bracketry uplift"></td>'
       + '<td class="derived-cell">'+sizeCell+'</td>'
       + '<td class="derived-cell">'+idCell+'</td>'
       + '<td class="derived-cell">'+velCell+'</td>'
       + '<td class="derived-cell">'+pdCell+'</td>'
       + '<td class="derived-cell">'+lossCell+'</td>'
-      + '<td class="derived-cell">'+wtCell+'</td>'
+      + '<td class="derived-cell">'+idxCell+'</td>'
+      + '<td class="derived-cell">'+pipeWtCell+'</td>'
+      + '<td class="derived-cell">'+waterWtCell+'</td>'
+      + '<td class="derived-cell">'+designWtCell+'</td>'
       + '<td class="derived-cell">'+statusCell+'</td>'
       + '<td><button class="del-btn" onclick="deleteSegment('+s.id+')" title="Delete">×</button></td>';
     body.appendChild(tr);
@@ -735,7 +878,7 @@ function recalc() {
   document.getElementById('t-count').textContent = segments.length;
   document.getElementById('t-length').textContent = totLength.toFixed(0);
   document.getElementById('t-vol').textContent = totVol.toFixed(0);
-  document.getElementById('t-weight').textContent = totWeight.toFixed(0);
+  document.getElementById('t-weight').textContent = totDesignKg.toFixed(0);
   document.getElementById('t-maxpd').textContent = maxPd.toFixed(0);
   document.getElementById('segCount').textContent = segments.length + ' segment' + (segments.length===1?'':'s');
 
@@ -807,6 +950,7 @@ function saveState() {
       limitPd: document.getElementById('limitPd').value,
       vMin: document.getElementById('vMin').value,
       vMax: document.getElementById('vMax').value,
+      llhVMax: document.getElementById('llhVMax').value,
       pipeCondition: document.getElementById('pipeCondition').value,
       plantPd: document.getElementById('plantPd').value,
       valvePd: document.getElementById('valvePd').value,
@@ -828,7 +972,7 @@ function loadState() {
     const set = (id,v) => { if (v!=null && document.getElementById(id)) document.getElementById(id).value = v; };
     set('project', st.project); set('engineer', st.engineer); set('glycol', st.glycol);
     set('defaultMaterial', st.defaultMaterial); set('limitPd', st.limitPd);
-    set('vMin', st.vMin); set('vMax', st.vMax); set('pipeCondition', st.pipeCondition);
+    set('vMin', st.vMin); set('vMax', st.vMax); set('llhVMax', st.llhVMax); set('pipeCondition', st.pipeCondition);
     set('plantPd', st.plantPd); set('valvePd', st.valvePd); set('strainerPd', st.strainerPd);
     set('miscPd', st.miscPd); set('staticHead', st.staticHead); set('safety', st.safety);
     return segments.length > 0;
@@ -839,12 +983,14 @@ function loadState() {
    EXPORTS
    ============================================================ */
 function exportCSV() {
-  const headers = ['Segment','Flow l/s','Material','Length m','Fittings %','Equip kPa','Size','ID mm','Velocity m/s','Pa/m','Seg Loss kPa','Filled Weight kg','Status','Index'];
-  const rows = segments.map(s => {
+  const headers = ['Segment','Feeds From','Flow l/s','ΔT K','Material','LLH','Length m','Fittings %','Equip kPa','Buffer %','Size','ID mm','Velocity m/s','Pa/m','Seg Loss kPa','Pipe kg','Water kg','Design Weight kg','Status','Index'];
+  const parentName = (s) => { const p = segments.find(x => x.id === s.parentId); return p ? (p.name || ('Pipe '+p.id)) : 'Plant / Root'; };
+  const rows = orderedSegments().map(s => {
     const r = sizeSegment(s);
-    if (r.error) return [s.name, s.flow, MAT_LABEL[s.material], s.length, s.fittings, s.equipKpa, '', '', '', '', '', '', r.error, s.isIndex?'Y':''];
-    return [s.name, s.flow, MAT_LABEL[s.material], s.length, s.fittings, s.equipKpa,
-      r.pick.nom, r.id_mm.toFixed(1), r.v.toFixed(2), r.pd.toFixed(0), r.segLoss_kPa.toFixed(2), r.filledKg.toFixed(0),
+    if (r.error) return [s.name, parentName(s), s.flow, s.dT, MAT_LABEL[s.material], s.isLLH?'Y':'', s.length, s.fittings, s.equipKpa, s.bufferPct, '', '', '', '', '', '', '', '', r.error, s.isIndex?'Y':''];
+    return [s.name, parentName(s), s.flow, s.dT, MAT_LABEL[s.material], s.isLLH?'Y':'', s.length, s.fittings, s.equipKpa, s.bufferPct,
+      r.pick.nom, r.id_mm.toFixed(1), r.v.toFixed(2), r.pd.toFixed(0), r.segLoss_kPa.toFixed(2),
+      r.pipeKg.toFixed(0), r.waterKg.toFixed(0), r.designKg.toFixed(0),
       r.status==='ok'?'OK':r.status==='velocity_warn'?'Review velocity':'No fit', s.isIndex?'Y':''];
   });
   const csv = [headers, ...rows].map(row => row.map(c => '"'+String(c==null?'':c).replace(/"/g,'""')+'"').join(',')).join('\n');
@@ -866,7 +1012,7 @@ function exportPDF() {
   const vMin = document.getElementById('vMin').value, vMax = document.getElementById('vMax').value;
   const logo = document.getElementById('brandLogo').src;
 
-  let within=0, over=0, noFit=0, totLen=0, totVol=0, totWt=0;
+  let within=0, over=0, noFit=0, totLen=0, totVol=0, totPipeKg=0, totWaterKg=0, totDesignKg=0;
   const overNames=[];
   const rows = segments.map(s => {
     const r = sizeSegment(s);
@@ -874,7 +1020,7 @@ function exportPDF() {
     if (r.status==='ok') within++;
     else if (r.status==='no_fit') { noFit++; overNames.push(s.name||'(unnamed)'); }
     else over++;
-    totLen += parseFloat(s.length)||0; totVol += r.waterL; totWt += r.filledKg;
+    totLen += parseFloat(s.length)||0; totVol += r.waterL; totPipeKg += r.pipeKg; totWaterKg += r.waterKg; totDesignKg += r.designKg;
     const st = r.status==='ok'?'OK':r.status==='velocity_warn'?'Review vel.':'No fit';
     const stc = r.status==='ok'?'#1f7a4c':'#c74418';
     return '<tr>'
@@ -962,7 +1108,13 @@ function exportPDF() {
     + '<h2>3. Segment Schedule</h2>'
     + '<table><thead><tr><th>Segment</th><th>Material</th><th class="n">Flow l/s</th><th class="n">Size</th><th class="n">ID mm</th><th class="n">Vel m/s</th><th class="n">Pa/m</th><th class="n">Loss kPa</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table>'
     + '<h2>4. Pump Duty</h2>'+pumpBlock
-    + '<h2>5. System Volume &amp; Weight</h2><p>Total fluid volume <strong>'+totVol.toFixed(0)+' litres</strong> (for expansion vessel sizing and dosing). Estimated filled pipework weight <strong>'+totWt.toFixed(0)+' kg</strong> (for structural support assessment).</p>'
+    + '<h2>5. System Volume &amp; Weight</h2><p>Total fluid volume <strong>'+totVol.toFixed(0)+' litres</strong> (for expansion vessel sizing and dosing). The design weight below includes bare pipe metalwork, fluid contents, and the per-line buffer allowance for lagging, cladding and bracketry — for structural support and load assessment.</p>'
+    + '<table><tbody>'
+    + '<tr><td>Pipe metalwork (dry)</td><td class="n">'+totPipeKg.toFixed(0)+' kg</td></tr>'
+    + '<tr><td>Fluid contents</td><td class="n">'+totWaterKg.toFixed(0)+' kg</td></tr>'
+    + '<tr><td>Filled pipework</td><td class="n">'+(totPipeKg+totWaterKg).toFixed(0)+' kg</td></tr>'
+    + '<tr style="border-top:2px solid #0b2a38"><td style="font-weight:700">Design weight (incl. lagging / cladding / bracketry buffer)</td><td class="n" style="font-weight:700">'+totDesignKg.toFixed(0)+' kg</td></tr>'
+    + '</tbody></table>'
     + '<div class="disc"><strong>Disclaimer:</strong> This report is a design aid based on the inputs provided and standard reference data (BS EN 10255, BS EN 1057, EN 10217-7, CIBSE Guide C). All outputs must be verified by a competent engineer against project requirements, manufacturers\' data and applicable standards before construction.</div>'
     + '</div></body></html>';
 
@@ -1001,13 +1153,19 @@ document.getElementById('calcDate').value = new Date().toISOString().slice(0,10)
 });
 
 if (!loadState()) {
-  // Seed with a small Fabergé-style example so it's not empty
-  addSegment({ name:'Plant → Lynx tee', flow:44.26, material:'carbon', length:20, fittings:20, equipKpa:0, isIndex:true });
-  addSegment({ name:'AHU 20 Lynx 1', flow:19.31, material:'trubore', length:25, fittings:35, equipKpa:30, isIndex:true });
-  addSegment({ name:'Main → Fabergé bldg', flow:24.22, material:'carbon', length:35, fittings:25, equipKpa:0, isIndex:false });
-  addSegment({ name:'AHU 12 Lynx 2', flow:8.25, material:'trubore', length:30, fittings:35, equipKpa:28, isIndex:false });
-  addSegment({ name:'A2 Test Bath', flow:1.19, material:'trubore', length:20, fittings:30, equipKpa:18, isIndex:false });
-  addSegment({ name:'Process Hot Water', flow:1.43, material:'trubore', length:24, fittings:30, equipKpa:20, isIndex:false });
+  // Seed with a linked Fabergé-style tree. Each addSegment defaults parentId to the
+  // previous row, so we pass explicit parentId where the structure branches.
+  lastDT = 20; lastMaterial = 'carbon';
+  const main = newSegment({ name:'Plant → Lynx tee', flow:44.26, dT:20, material:'carbon', length:20, fittings:20, equipKpa:0, isIndex:true, parentId:null });
+  segments.push(main);
+  const ahu20 = newSegment({ name:'AHU 20 Lynx 1', flow:19.31, dT:20, material:'trubore', length:25, fittings:35, equipKpa:30, isIndex:true, parentId:main.id });
+  const fab = newSegment({ name:'Main → Fabergé bldg', flow:24.22, dT:20, material:'carbon', length:35, fittings:25, equipKpa:0, isIndex:false, parentId:main.id });
+  segments.push(ahu20, fab);
+  segments.push(newSegment({ name:'AHU 12 Lynx 2', flow:8.25, dT:20, material:'trubore', length:30, fittings:35, equipKpa:28, parentId:fab.id }));
+  segments.push(newSegment({ name:'A2 Test Bath', flow:1.19, dT:20, material:'trubore', length:20, fittings:30, equipKpa:18, parentId:fab.id }));
+  segments.push(newSegment({ name:'Process Hot Water', flow:1.43, dT:20, material:'trubore', length:24, fittings:30, equipKpa:20, parentId:fab.id }));
+  lastMaterial = 'trubore';
+  recalc();
 } else {
   recalc();
 }
