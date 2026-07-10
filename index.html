@@ -930,7 +930,10 @@
   <div class="card circuits-card">
     <div class="card-title">
       <span>Circuits <span class="hint" id="circuitCountHint" style="margin-left:8px">0 circuits</span></span>
-      <button class="btn btn-primary" id="addRowBtn" style="font-size:11px;padding:7px 14px">+ Add Circuit</button>
+      <span style="display:flex;gap:8px">
+        <button class="btn" id="pasteRowsBtn" style="font-size:11px;padding:7px 14px">Paste rows</button>
+        <button class="btn btn-primary" id="addRowBtn" style="font-size:11px;padding:7px 14px">+ Add Circuit</button>
+      </span>
     </div>
 
     <div class="circuits-wrap">
@@ -982,25 +985,26 @@
         <div class="r-label">Circuits</div>
         <div class="r-value" id="t-count">0</div>
         <div class="r-unit">total</div>
-      </div>      <div class="total-block">
-        <div class="r-label">Total Duty</div>
-        <div class="r-value" id="t-kw">0.0</div>
-        <div class="r-unit">kW</div>
+      </div>
+      <div class="total-block" style="border-left:3px solid var(--brand-blue)">
+        <div class="r-label" style="color:var(--brand-blue-deep)">System Flow</div>
+        <div class="r-value" id="t-sysflow" style="color:var(--brand-blue-deep)">0.00</div>
+        <div class="r-unit">l/s · main line (pump)</div>
+      </div>
+      <div class="total-block" style="border-left:3px solid var(--brand-blue)">
+        <div class="r-label" style="color:var(--brand-blue-deep)">Design Head</div>
+        <div class="r-value" id="t-syshead" style="color:var(--brand-blue-deep)">0.00</div>
+        <div class="r-unit">bar · index run (pump)</div>
       </div>
       <div class="total-block">
-        <div class="r-label">Total Flow</div>
+        <div class="r-label">Sum of Flows</div>
         <div class="r-value" id="t-lps">0.00</div>
-        <div class="r-unit">l/s</div>
+        <div class="r-unit">l/s · all circuits</div>
       </div>
       <div class="total-block">
-        <div class="r-label">Total Flow</div>
-        <div class="r-value" id="t-m3h">0.00</div>
-        <div class="r-unit">m³/h</div>
-      </div>
-      <div class="total-block">
-        <div class="r-label">Total Mass</div>
-        <div class="r-value" id="t-mdot">0.000</div>
-        <div class="r-unit">kg/s</div>
+        <div class="r-label">Sum of Duty</div>
+        <div class="r-value" id="t-kw">0.0</div>
+        <div class="r-unit">kW · all circuits</div>
       </div>
       <div class="total-block">
         <div class="r-label">Max Circuit Loss</div>
@@ -1198,6 +1202,25 @@
 </footer>
 
 <div class="toast" id="toast">Copied</div>
+
+<!-- Paste rows modal -->
+<div id="pasteOverlay" onclick="closePaste()" style="display:none;position:fixed;inset:0;background:rgba(10,10,10,0.5);z-index:1000"></div>
+<div id="pasteModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(760px,94vw);max-height:88vh;overflow-y:auto;background:var(--white);z-index:1001;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,0.35)">
+  <div style="background:var(--black);color:var(--white);padding:16px 22px;border-bottom:3px solid var(--brand-blue);border-radius:6px 6px 0 0">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;letter-spacing:0.5px;text-transform:uppercase">Paste Circuit Rows</div>
+  </div>
+  <div style="padding:22px">
+    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:10px">One circuit per line. Columns separated by <strong>tab</strong> (paste from Excel) or <strong>comma</strong>. Fixed order:</p>
+    <div style="background:var(--off-white,#f5fafb);border:1px solid var(--line);border-radius:5px;padding:10px 12px;font-family:monospace;font-size:12px;margin-bottom:6px">Reference, flow (l/s), length, fittings, consumer load kPa, \u0394T, material</div>
+    <p style="font-size:12px;color:var(--muted,#8792a0);margin-bottom:6px">Only <strong>Reference</strong> and <strong>flow</strong> are required. Blank cells fall back to the last-used (sticky) defaults. All rows are added in <strong>Size from l/s</strong> mode.</p>
+    <p style="font-size:12px;color:var(--muted,#8792a0);margin-bottom:12px">Material accepts: carbon, copper, stainless304, stainless, trubore, mlcp (or leave blank for default).</p>
+    <textarea id="pasteBox" style="width:100%;height:220px;border:1px solid var(--line-strong,#cdd5da);border-radius:5px;padding:12px;font-family:monospace;font-size:13px;resize:vertical" placeholder="Plant to Lynx	19.31	100	30	0	20	stainless304&#10;Lynx AHU	5.61	35	30	0	20	stainless304&#10;Main From Lynx	13.70	60	30	0	20	stainless304"></textarea>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button class="btn" onclick="closePaste()">Cancel</button>
+      <button class="btn btn-primary" onclick="doPaste()">Add rows</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // Carbon Steel — BS EN 10255 medium grade (DN sizes with actual OD/wall)
@@ -1459,6 +1482,57 @@ function addCircuit(overrides) {
   lastDT = nc.dT; lastMaterial = nc.material; lastLength = nc.length; lastFittings = nc.fittings;
   circuits.push(nc);
   renderCircuits();
+}
+
+/* ============ BULK PASTE ============ */
+function openPaste() {
+  document.getElementById('pasteBox').value = '';
+  document.getElementById('pasteOverlay').style.display = 'block';
+  document.getElementById('pasteModal').style.display = 'block';
+}
+function closePaste() {
+  document.getElementById('pasteOverlay').style.display = 'none';
+  document.getElementById('pasteModal').style.display = 'none';
+}
+function doPaste() {
+  const raw = document.getElementById('pasteBox').value.trim();
+  if (!raw) { closePaste(); return; }
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  if (lines.length === 0) { closePaste(); return; }
+
+  // Add vs replace
+  let replace = false;
+  if (circuits.length > 0) {
+    const addBelow = confirm('Add these rows to the existing ' + circuits.length + ' circuit(s)?\n\nOK = Add below\nCancel = Replace everything');
+    replace = !addBelow;
+  }
+  if (replace) { circuits = []; }
+
+  const matMap = { carbon:'carbon','carbon steel':'carbon', copper:'copper', stainless304:'stainless304','304':'stainless304','stainless 304':'stainless304', stainless:'stainless','316':'stainless','stainless 316':'stainless', trubore:'trubore', mlcp:'mlcp' };
+  const parseCells = (line) => line.includes('\t') ? line.split('\t') : line.split(',');
+
+  let added = 0;
+  lines.forEach(line => {
+    const cells = parseCells(line).map(x => x.trim());
+    // Reference, flow, length, fittings, consumerLoad, dT, material
+    const ref = cells[0] || '';
+    const flow = parseFloat(cells[1]);
+    if (!ref && isNaN(flow)) return;
+    const o = { ref: ref || 'Circuit', mode: 'fromFlow', lps: isNaN(flow) ? 1.0 : flow };
+    if (cells[2] !== undefined && cells[2] !== '') o.length = parseFloat(cells[2]) || lastLength;
+    if (cells[3] !== undefined && cells[3] !== '') o.fittings = parseFloat(cells[3]);
+    if (cells[4] !== undefined && cells[4] !== '') o.consumerLoad = parseFloat(cells[4]) || 0;
+    if (cells[5] !== undefined && cells[5] !== '') o.dT = parseFloat(cells[5]);
+    if (cells[6] !== undefined && cells[6] !== '') { const m = matMap[cells[6].toLowerCase()]; if (m) o.material = m; }
+    const nc = newCircuit(o);
+    lastDT = nc.dT; lastMaterial = nc.material; lastLength = nc.length; lastFittings = nc.fittings;
+    circuits.push(nc);
+    added++;
+  });
+
+  closePaste();
+  renderCircuits();
+  showToast(added + ' row' + (added === 1 ? '' : 's') + ' added');
 }
 
 function deleteCircuit(id) {
@@ -1732,11 +1806,34 @@ function renderCircuits() {
     tbody.appendChild(tr);
   });
 
+  // System (pump) figures: main-line flow = largest index circuit flow; head from index run
+  let sysFlow = 0;
+  const idxCircuits = circuits.filter(c => c.isIndex);
+  let idxPipe = 0, idxLoad = 0;
+  idxCircuits.forEach(c => {
+    const r = calculateCircuit(c);
+    if (r.error) return;
+    if (r.vflow_ls > sysFlow) sysFlow = r.vflow_ls;
+    idxPipe += (r.recommended ? r.pipeLoss_kPa : 0);
+    idxLoad += (r.consumerLoad || 0);
+  });
+  let sysHeadBar = 0;
+  if (idxCircuits.length > 0) {
+    const plant = parseFloat(document.getElementById('plantPd').value)||0;
+    const valve = parseFloat(document.getElementById('valvePd').value)||0;
+    const strainer = parseFloat(document.getElementById('strainerPd').value)||0;
+    const misc = parseFloat(document.getElementById('miscPd').value)||0;
+    const staticHead = parseFloat(document.getElementById('staticHead').value)||0;
+    const safetyPct = parseFloat(document.getElementById('safetyFactor').value)||0;
+    const subtotal = idxPipe + idxLoad + plant + valve + strainer + misc + staticHead;
+    sysHeadBar = (subtotal * (1 + safetyPct/100)) / 100;
+  }
+
   document.getElementById('t-count').textContent   = circuits.length;
+  document.getElementById('t-sysflow').textContent = sysFlow.toFixed(2);
+  document.getElementById('t-syshead').textContent = sysHeadBar.toFixed(2);
   document.getElementById('t-kw').textContent      = totalKw.toFixed(1);
   document.getElementById('t-lps').textContent     = totalLps.toFixed(2);
-  document.getElementById('t-m3h').textContent     = totalM3h.toFixed(2);
-  document.getElementById('t-mdot').textContent    = totalMdot.toFixed(3);
   document.getElementById('t-maxloss').textContent = maxLoss_kPa.toFixed(1);
   document.getElementById('t-sumloss').textContent = sumLoss_kPa.toFixed(1);
   document.getElementById('circuitCountHint').textContent = circuits.length + ' circuit' + (circuits.length===1?'':'s');
@@ -1807,10 +1904,14 @@ function renderPumpPanel() {
   const finalKpa   = subtotal + safetyAdd;
   const finalMH    = (finalKpa * 1000) / (rho * 9.81);
 
+  // System / pump flow = the LARGEST flow among the ticked index circuits.
+  // In a real distribution this is the main line, which carries the whole system flow;
+  // downstream branches carry progressively less. We do NOT sum, because the branches
+  // are fed FROM the main — the pump only sees the main-line flow.
   let indexLps = 0, indexM3h = 0;
   indexCircuits.forEach(c => {
     const r = calculateCircuit(c);
-    if (!r.error) { indexLps += r.vflow_ls; indexM3h += r.vflow_m3h; }
+    if (!r.error && r.vflow_ls > indexLps) { indexLps = r.vflow_ls; indexM3h = r.vflow_m3h; }
   });
 
   document.getElementById('ps-indexPipe').textContent  = idxTotal.toFixed(1);
@@ -2129,6 +2230,13 @@ function exportPDFReport() {
     }
   });
 
+  // System (main-line) flow = largest index circuit flow, for the pump
+  let sysFlow = 0;
+  circuits.filter(c => c.isIndex).forEach(c => {
+    const r = calculateCircuit(c);
+    if (!r.error && r.vflow_ls > sysFlow) sysFlow = r.vflow_ls;
+  });
+
   // Pump
   const indexCircuits = circuits.filter(c => c.isIndex);
   let pumpSection = '<h2>4. Pump Duty &amp; Index Run</h2><p><em>No circuits marked as index run \u2014 pump duty not calculated. Tick the Index box on the most onerous circuit(s) to size the pump.</em></p>';
@@ -2139,7 +2247,7 @@ function exportPDFReport() {
       const pl = r.recommended ? r.pipeLoss_kPa : 0;
       const cl = r.consumerLoad || 0;
       idxPipe += pl; idxLoad += cl;
-      if (!r.error) { idxLps += r.vflow_ls; idxM3h += r.vflow_m3h; }
+      if (!r.error && r.vflow_ls > idxLps) { idxLps = r.vflow_ls; idxM3h = r.vflow_m3h; }
       return '<tr><td>'+escHtml(c.ref)+'</td><td class="n">'+pl.toFixed(2)+'</td><td class="n">'+cl.toFixed(2)+'</td><td class="n">'+(pl+cl).toFixed(2)+'</td></tr>';
     }).join('');
     const idxTotal = idxPipe + idxLoad;
@@ -2156,7 +2264,7 @@ function exportPDFReport() {
     const finalMH = (finalKpa*1000)/(rho*9.81);
     const names = indexCircuits.map(c=>c.ref).join(', ');
     pumpSection = '<h2>4. Pump Duty &amp; Index Run</h2>'
-      + '<p>The index run comprises: <strong>'+escHtml(names)+'</strong>. This is the hydraulically most onerous path and governs pump selection. The design head sums the index pipe friction and equipment losses, additional plant-side resistances, static head and a safety allowance.</p>'
+      + '<p>The index run comprises: <strong>'+escHtml(names)+'</strong>. This is the hydraulically most onerous path and governs pump selection. The design flow is the flow carried by the <strong>main line</strong> ('+idxLps.toFixed(2)+' l/s) \u2014 the largest flow along the index path \u2014 not the sum of the branches, since downstream circuits are fed from the main. The design head sums the index pipe friction and equipment losses (including the index terminal\u2019s consumer load), additional plant-side resistances, static head and a safety allowance.</p>'
       + '<table class="rpt"><thead><tr><th>Index Circuit</th><th class="n">Pipe Loss kPa</th><th class="n">Consumer kPa</th><th class="n">Total kPa</th></tr></thead><tbody>'+idxRows
       + '<tr class="sub"><td>Index run sub-total</td><td class="n">'+idxPipe.toFixed(2)+'</td><td class="n">'+idxLoad.toFixed(2)+'</td><td class="n">'+idxTotal.toFixed(2)+'</td></tr></tbody></table>'
       + '<table class="rpt" style="margin-top:8px"><tbody>'
@@ -2237,7 +2345,7 @@ function exportPDFReport() {
     + '<h2>1. Design Basis</h2>'
     + '<p>This report presents the hydronic pipework sizing for the above project. Pipe sizes are selected such that the frictional pressure gradient does not exceed <strong>'+limitPd+' Pa/m</strong> (CIBSE guidance), with velocities held within <strong>'+vMin+'\u2013'+vMax+' m/s</strong>. Losses are calculated using the Darcy\u2013Weisbach equation with the Colebrook\u2013White friction factor (Swamee\u2013Jain), for '+glyLabel+', assuming '+condLabel.toLowerCase()+' pipe. Materials: '+escHtml([...materialsUsed].join(', ')||'\u2014')+'.</p>'
     + '<h2>2. Summary of Findings</h2>'
-    + '<div class="tiles"><div class="tile"><div class="v">'+results.length+'</div><div class="l">Circuits</div></div><div class="tile"><div class="v">'+totalKw.toFixed(0)+'</div><div class="l">Total Duty kW</div></div><div class="tile"><div class="v">'+totalLps.toFixed(1)+'</div><div class="l">Total Flow l/s</div></div><div class="tile"><div class="v">'+within+'</div><div class="l">Within '+limitPd+' Pa/m</div></div></div>'
+    + '<div class="tiles"><div class="tile"><div class="v">'+results.length+'</div><div class="l">Circuits</div></div><div class="tile"><div class="v">'+totalKw.toFixed(0)+'</div><div class="l">Connected Duty kW</div></div><div class="tile"><div class="v">'+sysFlow.toFixed(1)+'</div><div class="l">System Flow l/s</div></div><div class="tile"><div class="v">'+within+'</div><div class="l">Within '+limitPd+' Pa/m</div></div></div>'
     + '<ul>'+findingsList+'</ul>'
     + '<h2>3. Circuit Sizing Schedule</h2>'
     + '<table class="rpt"><thead><tr><th>Circuit</th><th>Material</th><th class="n">Duty kW</th><th class="n">\u0394T K</th><th class="n">Flow l/s</th><th class="n">Size</th><th class="n">ID mm</th><th class="n">Vel m/s</th><th class="n">Pa/m</th><th class="n">Loss kPa</th><th>Status</th></tr></thead><tbody>'+(schedule||'<tr><td colspan="11">No circuits.</td></tr>')+'</tbody></table>'
@@ -2313,6 +2421,7 @@ document.getElementById('pipeCondition').addEventListener('change', e => {
   renderCircuits();
 });
 document.getElementById('addRowBtn').addEventListener('click', () => addCircuit());
+document.getElementById('pasteRowsBtn').addEventListener('click', openPaste);
 document.getElementById('addRowBtn2').addEventListener('click', () => addCircuit());
 document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
 document.getElementById('exportXlsxBtn').addEventListener('click', exportXLSX);
