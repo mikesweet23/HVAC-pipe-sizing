@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -525,6 +526,18 @@
 
   .circuits-table .mode-select { min-width: 100px; }
 
+  .row-dup {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 15px;
+    padding: 4px 6px;
+    line-height: 1;
+    border-radius: 3px;
+  }
+  .row-dup:hover { color: var(--brand-blue-deep); background: rgba(122,209,228,0.18); }
+
   .row-delete {
     background: transparent;
     border: 1px solid var(--line-strong);
@@ -794,7 +807,8 @@
     .circuits-table tr { display: block !important; width: 100% !important; }
     .circuits-table td { display: grid !important; width: 100% !important; }
     .circuits-table td.td-ref { display: block !important; }
-    .circuits-table td.td-delete { display: block !important; }
+    .circuits-table td.td-delete { display: flex !important; gap: 4px; }
+    .row-dup { min-width: 40px; min-height: 40px; font-size: 18px; }
 
     /* --- OVERFLOW FIXES --- */
     /* The Export/Paste/Add button row must wrap, not run off-screen */
@@ -1003,12 +1017,14 @@
         <div class="field">
           <label>Default Pipe Material</label>
           <select id="defaultMaterial">
-            <option value="carbon" selected>Carbon Steel</option>
-            <option value="copper">Copper</option>
+            <option value="truboreMetric" selected>TruBore Metric 304L</option>
+            <option value="truboreMetric316">TruBore Metric 316L</option>
+            <option value="trubore">TruBore ISO 304L</option>
+            <option value="trubore316">TruBore ISO 316L</option>
             <option value="stainless304">Stainless 304</option>
             <option value="stainless">Stainless 316</option>
-            <option value="trubore">TruBore ISO</option>
-            <option value="truboreMetric">TruBore Metric (exact bore)</option>
+            <option value="carbon">Carbon Steel</option>
+            <option value="copper">Copper</option>
             <option value="mlcp">MLCP</option>
           </select>
         </div>
@@ -1068,12 +1084,14 @@
             <div class="field" style="margin:0">
               <label style="color:rgba(255,255,255,0.8)">LLH Material</label>
               <select id="llhMaterial" onchange="renderCircuits()" style="background:rgba(255,255,255,0.08);border-color:rgba(122,209,228,0.3);color:var(--white)">
-                <option value="carbon" selected>Carbon Steel</option>
-                <option value="copper">Copper</option>
+                <option value="truboreMetric" selected>TruBore Metric 304L</option>
+                <option value="truboreMetric316">TruBore Metric 316L</option>
+                <option value="trubore">TruBore ISO 304L</option>
+                <option value="trubore316">TruBore ISO 316L</option>
                 <option value="stainless304">Stainless 304</option>
                 <option value="stainless">Stainless 316</option>
-                <option value="trubore">TruBore ISO</option>
-                <option value="truboreMetric">TruBore Metric</option>
+                <option value="carbon">Carbon Steel</option>
+                <option value="copper">Copper</option>
               </select>
             </div>
           </div>
@@ -1381,9 +1399,10 @@
     <p style="font-size:13px;color:var(--ink-soft);margin-bottom:10px">One circuit per line. Columns separated by <strong>tab</strong> (paste from Excel) or <strong>comma</strong>. Fixed order:</p>
     <div style="background:var(--off-white,#f5fafb);border:1px solid var(--line);border-radius:5px;padding:10px 12px;font-family:monospace;font-size:12px;margin-bottom:6px">Reference, flow (l/s), length, fittings, consumer load kPa, \u0394T, material</div>
     <p style="font-size:12px;color:var(--muted,#8792a0);margin-bottom:6px">Only <strong>Reference</strong> and <strong>flow</strong> are required. Blank cells fall back to the last-used (sticky) defaults. All rows are added in <strong>Size from l/s</strong> mode.</p>
-    <p style="font-size:12px;color:var(--muted,#8792a0);margin-bottom:12px">Material accepts: carbon, copper, stainless304, stainless, trubore, mlcp (or leave blank for default).</p>
+    <p style="font-size:12px;color:var(--muted,#8792a0);margin-bottom:12px">Material accepts: truboreMetric, truboreMetric316, trubore, trubore316, stainless304, stainless, carbon, copper, mlcp (or leave blank for default). <strong>"Export for editing" produces this exact format</strong> &mdash; export, edit in Excel, paste back with Replace for a quick round-trip.</p>
     <textarea id="pasteBox" style="width:100%;height:220px;border:1px solid var(--line-strong,#cdd5da);border-radius:5px;padding:12px;font-family:monospace;font-size:13px;resize:vertical" placeholder="Plant to Lynx	19.31	100	30	0	20	stainless304&#10;Lynx AHU	5.61	35	30	0	20	stainless304&#10;Main From Lynx	13.70	60	30	0	20	stainless304"></textarea>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap">
+      <button class="btn" onclick="copyPasteBox()" title="Copy the box contents to the clipboard">Copy all</button>
       <button class="btn" onclick="closePaste()">Cancel</button>
       <button class="btn btn-primary" onclick="doPaste()">Add rows</button>
     </div>
@@ -1568,7 +1587,7 @@ const MLCP = [
   ['110mm', 110.0, 7.0],
 ];
 
-const PIPES = { copper: COPPER, carbon: CARBON, stainless: STAINLESS, stainless304: STAINLESS304, trubore: TRUBORE, truboreMetric: TRUBORE_METRIC, mlcp: MLCP };
+const PIPES = { copper: COPPER, carbon: CARBON, stainless: STAINLESS, stainless304: STAINLESS304, trubore: TRUBORE, trubore316: TRUBORE, truboreMetric: TRUBORE_METRIC, truboreMetric316: TRUBORE_METRIC, mlcp: MLCP };
 
 // Material densities (kg/m³) — for pipe metalwork weight
 const MATERIAL_DENSITY = {
@@ -1576,7 +1595,9 @@ const MATERIAL_DENSITY = {
   stainless:    8000,   // 316
   stainless304: 8000,   // 304
   trubore:      8000,   // 304L/316L welded stainless
-  truboreMetric: 8000,  // 304L/316L welded stainless (metric exact-bore)
+  truboreMetric: 8000,  // 304L welded stainless (metric exact-bore)
+  truboreMetric316: 8000, // 316L welded stainless (metric exact-bore)
+  trubore316:   8000,   // 316L welded stainless (ISO)
   copper:       8960,
   mlcp:         940,    // representative — multilayer composite
 };
@@ -1599,9 +1620,9 @@ function calcPipeWeights(od_mm, wall_mm, material, fluid_rho) {
 }
 // Roughness presets in metres, by condition and material
 const ROUGHNESS_PRESETS = {
-  new:      { copper: 0.0000015, carbon: 0.000046, stainless: 0.000015, stainless304: 0.000015, trubore: 0.000015, truboreMetric: 0.000015, mlcp: 0.000007 },
-  used:     { copper: 0.000003,  carbon: 0.00012,  stainless: 0.00003,  stainless304: 0.00003,  trubore: 0.00003,  truboreMetric: 0.00003,  mlcp: 0.000007 },
-  corroded: { copper: 0.000005,  carbon: 0.0005,   stainless: 0.00006,  stainless304: 0.00006,  trubore: 0.00006,  truboreMetric: 0.00006,  mlcp: 0.000007 },
+  new:      { copper: 0.0000015, carbon: 0.000046, stainless: 0.000015, stainless304: 0.000015, trubore: 0.000015, trubore316: 0.000015, truboreMetric: 0.000015, truboreMetric316: 0.000015, mlcp: 0.000007 },
+  used:     { copper: 0.000003,  carbon: 0.00012,  stainless: 0.00003,  stainless304: 0.00003,  trubore: 0.00003,  trubore316: 0.00003,  truboreMetric: 0.00003,  truboreMetric316: 0.00003,  mlcp: 0.000007 },
+  corroded: { copper: 0.000005,  carbon: 0.0005,   stainless: 0.00006,  stainless304: 0.00006,  trubore: 0.00006,  trubore316: 0.00006,  truboreMetric: 0.00006,  truboreMetric316: 0.00006,  mlcp: 0.000007 },
 };
 
 function getRoughness(material) {
@@ -1611,12 +1632,12 @@ function getRoughness(material) {
     const carbonR    = (parseFloat(document.getElementById('customRoughCarbon').value)    || 0.046) / 1000;
     const stainlessR = (parseFloat(document.getElementById('customRoughStainless').value) || 0.015) / 1000;
     if (material === 'carbon')    return carbonR;
-    if (material === 'stainless' || material === 'stainless304' || material === 'trubore' || material === 'truboreMetric') return stainlessR;
+    if (material === 'stainless' || material === 'stainless304' || material === 'trubore' || material === 'trubore316' || material === 'truboreMetric' || material === 'truboreMetric316') return stainlessR;
     return ROUGHNESS_PRESETS.new[material] || 0.000046;
   }
   return (ROUGHNESS_PRESETS[condition] && ROUGHNESS_PRESETS[condition][material]) || 0.000046;
 }
-const MAT_LABEL = { carbon: 'Carbon Steel', copper: 'Copper', stainless: 'Stainless 316', stainless304: 'Stainless 304', trubore: 'TruBore ISO', truboreMetric: 'TruBore Metric (exact bore)', mlcp: 'MLCP' };
+const MAT_LABEL = { carbon: 'Carbon Steel', copper: 'Copper', stainless: 'Stainless 316', stainless304: 'Stainless 304', trubore: 'TruBore ISO 304L', trubore316: 'TruBore ISO 316L', truboreMetric: 'TruBore Metric 304L', truboreMetric316: 'TruBore Metric 316L', mlcp: 'MLCP' };
 
 const GLYCOL_TABLE = {
    0:[999,4.182,0.00131,0.0], 5:[1004,4.112,0.00152,-1.6], 10:[1009,4.042,0.00178,-3.3],
@@ -1701,6 +1722,18 @@ function exportForEditing() {
   showToast('Circuits loaded \u2014 copy out, edit, or edit here and Add rows (Cancel on the add-vs-replace prompt to replace)');
 }
 
+function copyPasteBox() {
+  const box = document.getElementById('pasteBox');
+  if (!box.value) { showToast('Nothing to copy'); return; }
+  box.focus(); box.select();
+  try {
+    navigator.clipboard.writeText(box.value).then(
+      () => showToast('Copied to clipboard'),
+      () => { document.execCommand('copy'); showToast('Copied to clipboard'); }
+    );
+  } catch(e) { document.execCommand('copy'); showToast('Copied to clipboard'); }
+}
+
 function openPaste() {
   document.getElementById('pasteBox').value = '';
   document.getElementById('pasteOverlay').style.display = 'block';
@@ -1724,7 +1757,7 @@ function doPaste() {
   }
   if (replace) { circuits = []; }
 
-  const matMap = { carbon:'carbon','carbon steel':'carbon', copper:'copper', stainless304:'stainless304','304':'stainless304','stainless 304':'stainless304', stainless:'stainless','316':'stainless','stainless 316':'stainless', trubore:'trubore','trubore iso':'trubore', truboremetric:'truboreMetric','trubore metric':'truboreMetric', mlcp:'mlcp' };
+  const matMap = { carbon:'carbon','carbon steel':'carbon', copper:'copper', stainless304:'stainless304','304':'stainless304','stainless 304':'stainless304', stainless:'stainless','316':'stainless','stainless 316':'stainless', trubore:'trubore','trubore iso':'trubore','trubore iso 304l':'trubore', trubore316:'trubore316','trubore iso 316l':'trubore316', truboremetric:'truboreMetric','trubore metric':'truboreMetric','trubore metric 304l':'truboreMetric', truboremetric316:'truboreMetric316','trubore metric 316l':'truboreMetric316', mlcp:'mlcp' };
   const parseCells = (line) => line.includes('\t') ? line.split('\t') : line.split(',');
 
   let added = 0;
@@ -1749,6 +1782,16 @@ function doPaste() {
   closePaste();
   renderCircuits();
   showToast(added + ' row' + (added === 1 ? '' : 's') + ' added');
+}
+
+function duplicateCircuit(id) {
+  const src = circuits.find(c => c.id === id);
+  if (!src) return;
+  const copy = newCircuit(Object.assign({}, src, { ref: src.ref + ' (copy)' }));
+  const idx = circuits.indexOf(src);
+  circuits.splice(idx + 1, 0, copy);
+  renderCircuits();
+  showToast('Circuit duplicated');
 }
 
 function deleteCircuit(id) {
@@ -1990,7 +2033,7 @@ function renderCircuits() {
     }
 
     tr.innerHTML =
-      '<td class="td-delete"><button class="row-delete" onclick="deleteCircuit(' + c.id + ')" title="Remove">\xd7</button></td>'
+      '<td class="td-delete"><button class="row-dup" onclick="duplicateCircuit(' + c.id + ')" title="Duplicate this circuit">\u29c9</button><button class="row-delete" onclick="deleteCircuit(' + c.id + ')" title="Remove">\xd7</button></td>'
       + '<td class="td-index" data-label="Index Run"><div class="index-check-wrap"><input type="checkbox" class="index-check" ' + (c.isIndex ? 'checked' : '') + ' onchange="updateCircuitField(' + c.id + ',\'isIndex\',this.checked)"></div></td>'
       + '<td class="td-index" data-label="LLH Header"><div class="index-check-wrap"><input type="checkbox" class="index-check" ' + (c.isLLH ? 'checked' : '') + ' onchange="updateCircuitField(' + c.id + ',\'isLLH\',this.checked)" title="Size as low loss header"></div></td>'
       + '<td class="td-ref" data-label="Reference"><input type="text" value="' + c.ref.replace(/"/g,'&quot;') + '" onchange="updateCircuitField(' + c.id + ',\'ref\',this.value)"></td>'
@@ -1998,12 +2041,14 @@ function renderCircuits() {
       + '<option value="fromKw"' + (c.mode==='fromKw'?' selected':'') + '>Size from kW</option>'
       + '<option value="fromFlow"' + (c.mode==='fromFlow'?' selected':'') + '>Size from l/s</option></select></td>'
       + '<td data-label="Material"><select onchange="updateCircuitField(' + c.id + ',\'material\',this.value)">'
-      + '<option value="carbon"'       + (c.material==='carbon'?      ' selected':'') + '>Carbon Steel</option>'
-      + '<option value="copper"'       + (c.material==='copper'?      ' selected':'') + '>Copper</option>'
+      + '<option value="truboreMetric"' + (c.material==='truboreMetric'?' selected':'') + '>TruBore Metric 304L</option>'
+      + '<option value="truboreMetric316"' + (c.material==='truboreMetric316'?' selected':'') + '>TruBore Metric 316L</option>'
+      + '<option value="trubore"'      + (c.material==='trubore'?     ' selected':'') + '>TruBore ISO 304L</option>'
+      + '<option value="trubore316"'   + (c.material==='trubore316'?  ' selected':'') + '>TruBore ISO 316L</option>'
       + '<option value="stainless304"' + (c.material==='stainless304'?' selected':'') + '>Stainless 304</option>'
       + '<option value="stainless"'    + (c.material==='stainless'?   ' selected':'') + '>Stainless 316</option>'
-      + '<option value="trubore"'      + (c.material==='trubore'?     ' selected':'') + '>TruBore ISO</option>'
-      + '<option value="truboreMetric"' + (c.material==='truboreMetric'?' selected':'') + '>TruBore Metric</option>'
+      + '<option value="carbon"'       + (c.material==='carbon'?      ' selected':'') + '>Carbon Steel</option>'
+      + '<option value="copper"'       + (c.material==='copper'?      ' selected':'') + '>Copper</option>'
       + '<option value="mlcp"'         + (c.material==='mlcp'?        ' selected':'') + '>MLCP</option></select></td>'
       + '<td data-label="Input A (kW)">' + inputA + '</td>'
       + '<td data-label="\u0394T (K)"><input type="number" value="' + c.dT + '" step="0.5" min="0.1" onchange="updateCircuitField(' + c.id + ',\'dT\',this.value)"></td>'
@@ -2450,16 +2495,30 @@ function exportPDFReport() {
     }
   });
 
-  // System (main-line) flow = largest index circuit flow, for the pump
-  let sysFlow = 0;
+  // System (main-line) flow = largest index circuit flow, for the pump.
+  // Its duty (kW) is the true consumer total, since the main carries every consumer.
+  let sysFlow = 0, sysKw = 0;
   circuits.filter(c => c.isIndex).forEach(c => {
     const r = calculateCircuit(c);
-    if (!r.error && r.vflow_ls > sysFlow) sysFlow = r.vflow_ls;
+    if (!r.error && r.vflow_ls > sysFlow) { sysFlow = r.vflow_ls; sysKw = r.kw; }
   });
+
+  // Capacity solver: max flow (l/s) through a given bore before Pa/m exceeds the limit.
+  // Bisection on flow; calcPD is monotonic in flow.
+  function maxFlowAtLimit(id_mm, material, limit) {
+    const id_m = id_mm / 1000;
+    let lo = 1e-6, hi = 20;               // m3/s bounds (up to 20,000 l/s)
+    if (calcPD(hi, id_m, material).pd < limit) return hi * 1000;
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (calcPD(mid, id_m, material).pd <= limit) lo = mid; else hi = mid;
+    }
+    return lo * 1000;                     // l/s
+  }
 
   // Pump
   const indexCircuits = circuits.filter(c => c.isIndex);
-  let pumpSection = '<h2>4. Pump Duty &amp; Index Run</h2><p><em>No circuits marked as index run \u2014 pump duty not calculated. Tick the Index box on the most onerous circuit(s) to size the pump.</em></p>';
+  let pumpSection = '<h2>5. Pump Duty &amp; Index Run</h2><p><em>No circuits marked as index run \u2014 pump duty not calculated. Tick the Index box on the most onerous circuit(s) to size the pump.</em></p>';
   if (indexCircuits.length > 0) {
     let idxPipe=0, idxLoad=0, idxLps=0, idxM3h=0;
     const idxRows = indexCircuits.map(c => {
@@ -2483,7 +2542,7 @@ function exportPDFReport() {
     const finalBar = finalKpa/100;
     const finalMH = (finalKpa*1000)/(rho*9.81);
     const names = indexCircuits.map(c=>c.ref).join(', ');
-    pumpSection = '<h2>4. Pump Duty &amp; Index Run</h2>'
+    pumpSection = '<h2>5. Pump Duty &amp; Index Run</h2>'
       + '<p>The index run comprises: <strong>'+escHtml(names)+'</strong>. This is the hydraulically most onerous path and governs pump selection. The design flow is the flow carried by the <strong>main line</strong> ('+idxLps.toFixed(2)+' l/s) \u2014 the largest flow along the index path \u2014 not the sum of the branches, since downstream circuits are fed from the main. The design head sums the index pipe friction and equipment losses (including the index terminal\u2019s consumer load), additional plant-side resistances, static head and a safety allowance.</p>'
       + '<table class="rpt"><thead><tr><th>Index Circuit</th><th class="n">Pipe Loss kPa</th><th class="n">Consumer kPa</th><th class="n">Total kPa</th></tr></thead><tbody>'+idxRows
       + '<tr class="sub"><td>Index run sub-total</td><td class="n">'+idxPipe.toFixed(2)+'</td><td class="n">'+idxLoad.toFixed(2)+'</td><td class="n">'+idxTotal.toFixed(2)+'</td></tr></tbody></table>'
@@ -2494,6 +2553,7 @@ function exportPDFReport() {
       + '<tr class="sub"><td>Sub-total</td><td class="n">'+subtotal.toFixed(1)+' kPa</td></tr>'
       + '<tr><td>Safety factor (+'+safetyPct+'%)</td><td class="n">'+(finalKpa-subtotal).toFixed(1)+' kPa</td></tr>'
       + '</tbody></table>'
+      + '<p style="margin-top:6px"><strong>Index pressure drop \u2014 actual: '+idxTotal.toFixed(1)+' kPa ('+(idxTotal/100).toFixed(2)+' bar)</strong> &nbsp;\u2192&nbsp; <strong>with allowances &amp; safety: '+finalKpa.toFixed(1)+' kPa ('+finalBar.toFixed(2)+' bar)</strong></p>'
       + '<div class="pump3">'
       + '<div class="pc"><div class="pl">Design Head</div><div class="pv">'+finalBar.toFixed(2)+'</div><div class="pu">bar</div></div>'
       + '<div class="pc"><div class="pl">Design Head</div><div class="pv">'+finalMH.toFixed(1)+'</div><div class="pu">m H\u2082O</div></div>'
@@ -2538,6 +2598,27 @@ function exportPDFReport() {
       + '<td style="color:'+stc+';font-weight:600">'+st+'</td></tr>';
   }).join('');
 
+  // ===== Capacity & Uplift: what each selected pipe could carry at the Pa/m limit =====
+  const capRows = results.map(({c,r}) => {
+    if (r.error || !r.recommended) return '';
+    const rec = r.recommended;
+    const capLps = maxFlowAtLimit(rec.id_mm, c.material, limitPd);
+    const rhoNow = parseFloat(document.getElementById('rho').value) || 999;
+    const cpNow  = parseFloat(document.getElementById('cp').value) || 4.182;
+    const capKw  = (capLps/1000) * rhoNow * cpNow * (parseFloat(c.dT)||0);
+    const headroomPct = r.vflow_ls > 0 ? ((capLps / r.vflow_ls) - 1) * 100 : 0;
+    const { v: capV } = calcPD(capLps/1000, rec.id_mm/1000, c.material);
+    const velNote = capV > (parseFloat(document.getElementById('vMax').value)||3.0) ? ' <span style="color:#c74418">(vel!)</span>' : '';
+    return '<tr><td>'+escHtml(c.ref)+'</td><td class="n">'+rec.nom+'</td>'
+      + '<td class="n">'+r.vflow_ls.toFixed(2)+'</td><td class="n">'+r.kw.toFixed(1)+'</td>'
+      + '<td class="n">'+capLps.toFixed(2)+'</td><td class="n">'+capKw.toFixed(1)+'</td>'
+      + '<td class="n">+'+headroomPct.toFixed(0)+'%'+velNote+'</td></tr>';
+  }).join('');
+  const capacitySection = '<h2>4. Pipe Capacity &amp; Available Uplift at '+limitPd+' Pa/m</h2>'
+    + '<p>For each selected pipe, the table below shows the maximum flow the bore could carry before reaching the '+limitPd+' Pa/m design gradient, and the corresponding duty at the circuit\u2019s \u0394T \u2014 demonstrating the spare capacity (uplift) available in the installed size. Entries marked (vel!) would exceed the velocity limit before reaching the pressure gradient limit.</p>'
+    + '<table class="rpt"><thead><tr><th>Circuit</th><th class="n">Size</th><th class="n">Design l/s</th><th class="n">Design kW</th><th class="n">Max l/s @ '+limitPd+' Pa/m</th><th class="n">Peak kW available</th><th class="n">Uplift</th></tr></thead><tbody>'
+    + (capRows || '<tr><td colspan="7">No circuits.</td></tr>') + '</tbody></table>';
+
   const filledKg = totalPipeKg + totalWaterKg;
   const designKg = filledKg * (1 + upliftPct/100);
   const glyLabel = glyPct===0 ? 'water (LPHW / CHW)' : glyPct+'% propylene glycol';
@@ -2569,13 +2650,15 @@ function exportPDFReport() {
     + '<h2>1. Design Basis</h2>'
     + '<p>This report presents the hydronic pipework sizing for the above project. Pipe sizes are selected such that the frictional pressure gradient does not exceed <strong>'+limitPd+' Pa/m</strong> (CIBSE guidance), with velocities held within <strong>'+vMin+'\u2013'+vMax+' m/s</strong>. Losses are calculated using the Darcy\u2013Weisbach equation with the Colebrook\u2013White friction factor (Swamee\u2013Jain), for '+glyLabel+', assuming '+condLabel.toLowerCase()+' pipe. Materials: '+escHtml([...materialsUsed].join(', ')||'\u2014')+'.</p>'
     + '<h2>2. Summary of Findings</h2>'
-    + '<div class="tiles"><div class="tile"><div class="v">'+results.length+'</div><div class="l">Circuits</div></div><div class="tile"><div class="v">'+totalKw.toFixed(0)+'</div><div class="l">Connected Duty kW</div></div><div class="tile"><div class="v">'+sysFlow.toFixed(1)+'</div><div class="l">System Flow l/s</div></div><div class="tile"><div class="v">'+within+'</div><div class="l">Within '+limitPd+' Pa/m</div></div></div>'
+    + '<div class="tiles"><div class="tile"><div class="v">'+results.length+'</div><div class="l">Circuits</div></div><div class="tile"><div class="v">'+sysKw.toFixed(0)+'</div><div class="l">Consumer Total kW (main line)</div></div><div class="tile"><div class="v">'+sysFlow.toFixed(1)+'</div><div class="l">System Flow l/s</div></div><div class="tile"><div class="v">'+totalKw.toFixed(0)+'</div><div class="l">Sum of Rows kW</div></div><div class="tile"><div class="v">'+within+'</div><div class="l">Within '+limitPd+' Pa/m</div></div></div>'
+    + '<p style="font-size:8.5pt;color:#5a6875">Consumer Total is the duty carried by the main line \u2014 the true system load. Sum of Rows adds every circuit including distribution mains, so it double-counts flow that passes through multiple rows; it is shown for reference only.</p>'
     + '<ul>'+findingsList+'</ul>'
     + '<h2>3. Circuit Sizing Schedule</h2>'
     + '<table class="rpt"><thead><tr><th>Circuit</th><th>Material</th><th class="n">Duty kW</th><th class="n">\u0394T K</th><th class="n">Flow l/s</th><th class="n">Size</th><th class="n">ID mm</th><th class="n">Vel m/s</th><th class="n">Pa/m</th><th class="n">Loss kPa</th><th class="n">Inst. kg/m</th><th class="n">Inst. kg</th><th>Status</th></tr></thead><tbody>'+(schedule||'<tr><td colspan="13">No circuits.</td></tr>')+'</tbody></table>'
     + '<p style="font-size:8.5pt;color:#5a6875">Installed weights include the '+upliftPct+'% uplift for lagging, cladding and bracketry, applied per line.</p>'
+    + capacitySection
     + pumpSection
-    + '<h2>5. System Volume &amp; Weight</h2><p>Total system fluid volume <strong>'+totalWaterL.toFixed(0)+' litres</strong> (for expansion vessel sizing and dosing). Estimated installed pipework weight, incl. '+upliftPct+'% allowance for lagging, cladding and fittings, is <strong>'+designKg.toFixed(0)+' kg</strong> (for structural support assessment).</p>'
+    + '<h2>6. System Volume &amp; Weight</h2><p>Total system fluid volume <strong>'+totalWaterL.toFixed(0)+' litres</strong> (for expansion vessel sizing and dosing). Estimated installed pipework weight, incl. '+upliftPct+'% allowance for lagging, cladding and fittings, is <strong>'+designKg.toFixed(0)+' kg</strong> (for structural support assessment).</p>'
     + '<table class="rpt"><tbody><tr><td>Pipe metalwork (dry)</td><td class="n">'+totalPipeKg.toFixed(0)+' kg</td></tr><tr><td>Fluid contents</td><td class="n">'+totalWaterKg.toFixed(0)+' kg ('+totalWaterL.toFixed(0)+' L)</td></tr><tr><td>Filled pipework</td><td class="n">'+filledKg.toFixed(0)+' kg</td></tr><tr class="sub"><td>Design weight (incl. '+upliftPct+'% uplift)</td><td class="n">'+designKg.toFixed(0)+' kg</td></tr></tbody></table>'
     + '<div class="disc"><strong>Disclaimer:</strong> This calculation report is a design aid. Results are based on the inputs provided and standard reference data (BS EN 10255, BS EN 1057, EN 10217-7, CIBSE Guide C). All outputs must be verified by a competent engineer against project-specific requirements, manufacturers\u2019 certified data and applicable standards prior to construction.</div>'
     + '</div></body></html>';
