@@ -1175,14 +1175,9 @@
         <div class="r-unit">bar · index run (pump)</div>
       </div>
       <div class="total-block">
-        <div class="r-label">Sum of Flows</div>
-        <div class="r-value" id="t-lps">0.00</div>
-        <div class="r-unit">l/s · all circuits</div>
-      </div>
-      <div class="total-block">
-        <div class="r-label">Sum of Duty</div>
-        <div class="r-value" id="t-kw">0.0</div>
-        <div class="r-unit">kW · all circuits</div>
+        <div class="r-label">Consumer Duty</div>
+        <div class="r-value" id="t-conskw">0.0</div>
+        <div class="r-unit">kW · consumers only</div>
       </div>
       <div class="total-block">
         <div class="r-label">Max Circuit Loss</div>
@@ -1201,8 +1196,8 @@
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--brand-blue)">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink)">System Weight &amp; Volume Summary</div>
         <div class="weight-uplift-row" style="display:flex;align-items:center;gap:8px">
-          <label style="margin:0;font-size:11px;letter-spacing:0.5px">Lagging/Cladding/Bracketry Uplift <span class="unit">%</span> <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(10–30% typical)</span></label>
-          <input type="number" id="weightUplift" value="20" step="5" min="0" max="100" oninput="renderCircuits()" style="width:70px;padding:6px 8px;font-size:13px">
+          <label style="margin:0;font-size:11px;letter-spacing:0.5px">Lagging/Cladding/Bracketry Uplift <span class="unit">%</span> <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(5–40%, default 20%)</span></label>
+          <input type="number" id="weightUplift" value="20" step="5" min="5" max="40" oninput="renderCircuits()" style="width:70px;padding:6px 8px;font-size:13px">
         </div>
       </div>
 
@@ -1639,6 +1634,26 @@ function getRoughness(material) {
 }
 const MAT_LABEL = { carbon: 'Carbon Steel', copper: 'Copper', stainless: 'Stainless 316', stainless304: 'Stainless 304', trubore: 'TruBore ISO 304L', trubore316: 'TruBore ISO 316L', truboreMetric: 'TruBore Metric 304L', truboreMetric316: 'TruBore Metric 316L', mlcp: 'MLCP' };
 
+// Capacity solver: max flow (l/s) through a given bore before Pa/m exceeds the limit.
+// Bisection on flow; calcPD is monotonic in flow.
+function maxFlowAtLimit(id_mm, material, limit) {
+  const id_m = id_mm / 1000;
+  let lo = 1e-6, hi = 20;               // m3/s bounds
+  if (calcPD(hi, id_m, material).pd < limit) return hi * 1000;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (calcPD(mid, id_m, material).pd <= limit) lo = mid; else hi = mid;
+  }
+  return lo * 1000;                     // l/s
+}
+
+// Lagging/cladding/bracketry uplift, clamped to the permitted 5–40% band
+function getWeightUplift() {
+  const v = parseFloat(document.getElementById('weightUplift').value);
+  if (isNaN(v)) return 20;
+  return Math.min(40, Math.max(5, v));
+}
+
 const GLYCOL_TABLE = {
    0:[999,4.182,0.00131,0.0], 5:[1004,4.112,0.00152,-1.6], 10:[1009,4.042,0.00178,-3.3],
   15:[1014,3.972,0.00208,-5.1], 20:[1019,3.902,0.00244,-7.1], 25:[1024,3.832,0.00287,-9.6],
@@ -1674,7 +1689,7 @@ let nextId = 1;
 let lastDT = 6;
 let lastMaterial = null;
 let lastLength = 20;
-let lastFittings = 30;
+let lastFittings = 20;
 
 function newCircuit(overrides = {}) {
   const mat = overrides.material || lastMaterial || document.getElementById('defaultMaterial').value;
@@ -1807,7 +1822,7 @@ function updateCircuitField(id, field, value) {
   if (field === 'dT') lastDT = value;
   if (field === 'material') lastMaterial = value;
   if (field === 'length') lastLength = value;
-  if (field === 'fittings') lastFittings = value;
+  if (field === 'fittings') { value = Math.max(0, Math.min(40, parseFloat(value) || 0)); c.fittings = value; lastFittings = value; }
   renderCircuits();
 }
 
@@ -1941,7 +1956,7 @@ function renderCircuits() {
     tbody.appendChild(tr);
   }
 
-  let totalKw = 0, totalLps = 0, totalMdot = 0, totalM3h = 0;
+  let totalKw = 0, totalLps = 0, totalMdot = 0, totalM3h = 0; let consumerKw = 0;
   let maxLoss_kPa = 0, sumLoss_kPa = 0;
   let totalPipeKg = 0, totalWaterKg = 0, totalWaterL = 0;
 
@@ -1965,6 +1980,7 @@ function renderCircuits() {
 
     if (!result.error) {
       totalKw   += result.kw;
+      if ((parseFloat(c.consumerLoad) || 0) > 0) consumerKw += result.kw;
       totalLps  += result.vflow_ls;
       totalMdot += result.mdot;
       totalM3h  += result.vflow_m3h;
@@ -1986,6 +2002,17 @@ function renderCircuits() {
           ? '<div style="font-size:10px;color:#c28a00;font-weight:600;letter-spacing:0.5px;margin-top:2px">' + (result.sizeOverride > 0 ? '+' : '') + result.sizeOverride + ' from auto (' + result.autoRecommended.nom + ')</div>'
           : '';
         const idDisplay = '<div style="font-size:10px;color:var(--muted);font-weight:500;font-family:\'Inter\',sans-serif;letter-spacing:0.3px;margin-top:1px">ID ' + result.recommended.id_mm.toFixed(1) + 'mm</div>';
+        // Peak capacity of the SELECTED size at the Pa/m limit — live headroom guide
+        const _lim = parseFloat(document.getElementById('limitPd').value) || 300;
+        const _rho = parseFloat(document.getElementById('rho').value) || 999;
+        const _cp  = parseFloat(document.getElementById('cp').value) || 4.182;
+        const _capL = maxFlowAtLimit(result.recommended.id_mm, c.material, _lim);
+        const _capKw = (_capL/1000) * _rho * _cp * (parseFloat(c.dT) || 0);
+        const _upliftAvail = result.vflow_ls > 0 ? ((_capL / result.vflow_ls) - 1) * 100 : 0;
+        const capacityLine = '<div style="font-size:10px;color:var(--brand-blue-deep);margin-top:3px;padding-top:3px;border-top:1px dashed var(--line);text-align:center;line-height:1.4" title="Maximum this size can carry before exceeding the Pa/m limit — the uplift available in this line">'
+          + 'Peak @ ≤' + _lim + ' Pa/m:<br><strong>' + _capL.toFixed(2) + ' l/s · ' + _capKw.toFixed(0) + ' kW</strong>'
+          + ' <span style="color:' + (_upliftAvail >= 0 ? 'var(--ok, #1f7a4c)' : '#c74418') + '">(' + (_upliftAvail >= 0 ? '+' : '') + _upliftAvail.toFixed(0) + '%)</span>'
+          + '</div>';
         recText = '<div style="display:flex;flex-direction:column;align-items:center;gap:2px">'
           + '<div style="display:flex;align-items:center;gap:6px">'
           +   '<button onclick="updateCircuitField(' + c.id + ',\'sizeOverride\',(parseInt(circuits.find(c=>c.id===' + c.id + ').sizeOverride)||0)-1)" title="Step down one size" style="background:var(--white);border:1px solid var(--line-strong);color:var(--ink);width:22px;height:22px;border-radius:3px;cursor:pointer;font-weight:700;line-height:1;padding:0">−</button>'
@@ -1994,6 +2021,7 @@ function renderCircuits() {
           + '</div>'
           + (isOverridden ? '<button onclick="updateCircuitField(' + c.id + ',\'sizeOverride\',0)" title="Reset to auto-recommendation" style="background:transparent;border:none;color:var(--brand-blue-deep);font-size:10px;cursor:pointer;text-decoration:underline;padding:0;margin-top:2px">reset to auto</button>' : '')
           + overrideLabel
+          + capacityLine
           + '</div>';
 
         pipeLossText = result.pipeLoss_kPa.toFixed(1) + ' <span style="font-size:11px;color:var(--muted)">kPa</span>'
@@ -2012,7 +2040,7 @@ function renderCircuits() {
 
         // Build Weight & Volume cell — combined kg/m + total mass + water litres
         const w = result.weights;
-        const upl = parseFloat(document.getElementById('weightUplift').value) || 0;
+        const upl = getWeightUplift();
         const installed_kg_m = w.combined_kg_per_m * (1 + upl/100);
         const installed_kg_total = w.combined_kg_total * (1 + upl/100);
         weightText = '<div style="line-height:1.35">'
@@ -2054,7 +2082,7 @@ function renderCircuits() {
       + '<td data-label="\u0394T (K)"><input type="number" value="' + c.dT + '" step="0.5" min="0.1" onchange="updateCircuitField(' + c.id + ',\'dT\',this.value)"></td>'
       + '<td data-label="Input B (l/s)">' + inputB + '</td>'
       + '<td data-label="Length (m)"><input type="number" value="' + c.length + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'length\',this.value)"></td>'
-      + '<td data-label="Fittings %"><input type="number" value="' + c.fittings + '" step="5" min="0" onchange="updateCircuitField(' + c.id + ',\'fittings\',this.value)"></td>'
+      + '<td data-label="Fittings %"><input type="number" value="' + c.fittings + '" step="5" min="0" max="40" onchange="updateCircuitField(' + c.id + ',\'fittings\',this.value)"></td>'
       + '<td data-label="Consumer Load (kPa)"><input type="number" value="' + c.consumerLoad + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'consumerLoad\',this.value)" title="Equipment \u0394P: AHU coil, HX, FCU etc."></td>'
       + '<td class="derived-cell" data-label="Mass Flow (kg/s)">' + mdotDerived + '</td>'
       + '<td class="derived-cell" data-label="Vol Flow (l/s)">' + lpsDerived + '</td>'
@@ -2097,14 +2125,13 @@ function renderCircuits() {
   document.getElementById('t-count').textContent   = circuits.length;
   document.getElementById('t-sysflow').textContent = sysFlow.toFixed(2);
   document.getElementById('t-syshead').textContent = sysHeadBar.toFixed(2);
-  document.getElementById('t-kw').textContent      = totalKw.toFixed(1);
-  document.getElementById('t-lps').textContent     = totalLps.toFixed(2);
+  document.getElementById('t-conskw').textContent  = consumerKw.toFixed(1);
   document.getElementById('t-maxloss').textContent = maxLoss_kPa.toFixed(1);
   document.getElementById('t-sumloss').textContent = sumLoss_kPa.toFixed(1);
   document.getElementById('circuitCountHint').textContent = circuits.length + ' circuit' + (circuits.length===1?'':'s');
 
   // Weight totals
-  const upliftPct = parseFloat(document.getElementById('weightUplift').value) || 0;
+  const upliftPct = getWeightUplift();
   const filledKg = totalPipeKg + totalWaterKg;
   const designKg = filledKg * (1 + upliftPct / 100);
   document.getElementById('w-pipe').textContent      = totalPipeKg.toFixed(0);
@@ -2316,7 +2343,7 @@ function buildExportRows() {
     }
   });
 
-  const upliftPct = parseFloat(document.getElementById('weightUplift').value) || 0;
+  const upliftPct = getWeightUplift();
   const filledKg = totalPipeKg + totalWaterKg;
   const designKg = filledKg * (1 + upliftPct / 100);
 
@@ -2473,18 +2500,19 @@ function exportPDFReport() {
   const vMax     = parseFloat(document.getElementById('vMax').value) || 3.0;
   const condSel  = document.getElementById('pipeCondition');
   const condLabel = condSel ? condSel.options[condSel.selectedIndex].text : 'New / clean';
-  const upliftPct = parseFloat(document.getElementById('weightUplift').value) || 0;
+  const upliftPct = getWeightUplift();
 
   const results = circuits.map(c => ({ c, r: calculateCircuit(c) }));
   const valid = results.filter(x => !x.r.error && x.r.recommended);
 
-  let totalKw=0, totalLps=0, totalPipeKg=0, totalWaterKg=0, totalWaterL=0;
+  let totalKw=0, totalLps=0, totalPipeKg=0, totalWaterKg=0, totalWaterL=0, consumerKw=0;
   let within=0, over=0, noFit=0, velWarn=0;
   const overNames=[], velNames=[], noFitNames=[];
   const materialsUsed = new Set();
   results.forEach(({c,r}) => {
     if (r.error) { noFit++; noFitNames.push(c.ref); return; }
     totalKw += r.kw; totalLps += r.vflow_ls;
+    if ((parseFloat(c.consumerLoad) || 0) > 0) consumerKw += r.kw;
     totalPipeKg += r.weights.pipe_kg_total; totalWaterKg += r.weights.water_kg_total; totalWaterL += r.weights.water_l_total;
     materialsUsed.add(MAT_LABEL[c.material] || c.material);
     if (r.recommended) {
@@ -2503,18 +2531,6 @@ function exportPDFReport() {
     if (!r.error && r.vflow_ls > sysFlow) { sysFlow = r.vflow_ls; sysKw = r.kw; }
   });
 
-  // Capacity solver: max flow (l/s) through a given bore before Pa/m exceeds the limit.
-  // Bisection on flow; calcPD is monotonic in flow.
-  function maxFlowAtLimit(id_mm, material, limit) {
-    const id_m = id_mm / 1000;
-    let lo = 1e-6, hi = 20;               // m3/s bounds (up to 20,000 l/s)
-    if (calcPD(hi, id_m, material).pd < limit) return hi * 1000;
-    for (let i = 0; i < 60; i++) {
-      const mid = (lo + hi) / 2;
-      if (calcPD(mid, id_m, material).pd <= limit) lo = mid; else hi = mid;
-    }
-    return lo * 1000;                     // l/s
-  }
 
   // Pump
   const indexCircuits = circuits.filter(c => c.isIndex);
@@ -2650,8 +2666,8 @@ function exportPDFReport() {
     + '<h2>1. Design Basis</h2>'
     + '<p>This report presents the hydronic pipework sizing for the above project. Pipe sizes are selected such that the frictional pressure gradient does not exceed <strong>'+limitPd+' Pa/m</strong> (CIBSE guidance), with velocities held within <strong>'+vMin+'\u2013'+vMax+' m/s</strong>. Losses are calculated using the Darcy\u2013Weisbach equation with the Colebrook\u2013White friction factor (Swamee\u2013Jain), for '+glyLabel+', assuming '+condLabel.toLowerCase()+' pipe. Materials: '+escHtml([...materialsUsed].join(', ')||'\u2014')+'.</p>'
     + '<h2>2. Summary of Findings</h2>'
-    + '<div class="tiles"><div class="tile"><div class="v">'+results.length+'</div><div class="l">Circuits</div></div><div class="tile"><div class="v">'+sysKw.toFixed(0)+'</div><div class="l">Consumer Total kW (main line)</div></div><div class="tile"><div class="v">'+sysFlow.toFixed(1)+'</div><div class="l">System Flow l/s</div></div><div class="tile"><div class="v">'+totalKw.toFixed(0)+'</div><div class="l">Sum of Rows kW</div></div><div class="tile"><div class="v">'+within+'</div><div class="l">Within '+limitPd+' Pa/m</div></div></div>'
-    + '<p style="font-size:8.5pt;color:#5a6875">Consumer Total is the duty carried by the main line \u2014 the true system load. Sum of Rows adds every circuit including distribution mains, so it double-counts flow that passes through multiple rows; it is shown for reference only.</p>'
+    + '<div class="tiles"><div class="tile"><div class="v">'+results.length+'</div><div class="l">Circuits</div></div><div class="tile"><div class="v">'+consumerKw.toFixed(0)+'</div><div class="l">Consumer Total kW</div></div><div class="tile"><div class="v">'+sysFlow.toFixed(1)+'</div><div class="l">System Flow l/s</div></div><div class="tile"><div class="v">'+within+'</div><div class="l">Within '+limitPd+' Pa/m</div></div></div>'
+    + '<p style="font-size:8.5pt;color:#5a6875">Consumer Total sums the duty of circuits with a consumer load (kPa) entered \u2014 i.e. the terminal equipment. Distribution mains carry no consumer load and are excluded, avoiding double-counting.</p>'
     + '<ul>'+findingsList+'</ul>'
     + '<h2>3. Circuit Sizing Schedule</h2>'
     + '<table class="rpt"><thead><tr><th>Circuit</th><th>Material</th><th class="n">Duty kW</th><th class="n">\u0394T K</th><th class="n">Flow l/s</th><th class="n">Size</th><th class="n">ID mm</th><th class="n">Vel m/s</th><th class="n">Pa/m</th><th class="n">Loss kPa</th><th class="n">Inst. kg/m</th><th class="n">Inst. kg</th><th>Status</th></tr></thead><tbody>'+(schedule||'<tr><td colspan="13">No circuits.</td></tr>')+'</tbody></table>'
