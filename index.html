@@ -526,6 +526,19 @@
 
   .circuits-table .mode-select { min-width: 100px; }
 
+  .row-move {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 4px;
+    line-height: 1;
+    border-radius: 3px;
+  }
+  .row-move:hover:not(:disabled) { color: var(--brand-blue-deep); background: rgba(122,209,228,0.18); }
+  .row-move:disabled { opacity: 0.22; cursor: default; }
+
   .row-dup {
     background: transparent;
     border: none;
@@ -775,6 +788,13 @@
   }
 
   .badge-llh { background: rgba(240,165,0,0.15); color: #b37800; border: 1px solid rgba(240,165,0,0.4); }
+  #thermalSummary td { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  #thermalSummary td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Thermal columns are hidden until heat loss is enabled */
+  body:not(.thermal-on) .th-thermal,
+  body:not(.thermal-on) .td-thermal { display: none !important; }
+
   /* ========================================================
      ACCIDENTAL-EDIT GUARD — number fields are type-only
      Removes the tiny spinner arrows so a stray click cannot
@@ -824,6 +844,7 @@
     .circuits-table td.td-ref { display: block !important; }
     .circuits-table td.td-delete { display: flex !important; gap: 4px; }
     .row-dup { min-width: 40px; min-height: 40px; font-size: 18px; }
+    .row-move { min-width: 34px; min-height: 40px; font-size: 13px; }
 
     /* --- OVERFLOW FIXES --- */
     /* The Export/Paste/Add button row must wrap, not run off-screen */
@@ -1121,6 +1142,82 @@
     </div>
   </div>
 
+  <!-- Thermal / Heat Loss -->
+  <div class="card" id="thermalCard" style="margin-bottom:24px">
+    <div class="card-title">
+      Thermal Performance &amp; Heat Loss
+      <span class="hint">BS EN ISO 12241 · thicknesses to BS 5422:2023</span>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:16px">
+      <input type="checkbox" id="thermalEnabled" onchange="onThermalToggle(); renderCircuits();"
+             style="width:18px;height:18px;accent-color:var(--brand-blue);cursor:pointer;flex-shrink:0">
+      <span style="font-size:14px;font-weight:600">Calculate heat loss and standing losses</span>
+    </label>
+
+    <div id="thermalSettings" style="display:none">
+      <div class="input-grid">
+        <div class="input-group">
+          <label>Insulation Type</label>
+          <select id="insType" onchange="onInsTypeChange()">
+            <option value="pir" selected>PIR rigid closed-cell (33 kg/m³)</option>
+            <option value="mineralWool">Mineral wool pipe section</option>
+            <option value="phenolic">Phenolic foam</option>
+            <option value="elastomeric">Elastomeric (nitrile rubber)</option>
+            <option value="cellGlass">Cellular glass</option>
+            <option value="none">Bare pipe (no insulation)</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Conductivity λ <span class="unit">W/m·K</span></label>
+          <input type="number" id="insLambda" value="0.025" step="0.001" min="0" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Surface Finish <span class="unit">project default</span></label>
+          <select id="surfaceFinish" onchange="renderCircuits()">
+            <option value="alu" selected>Bright aluminium cladding (low ε)</option>
+            <option value="foil">Foil facing only, unclad (low ε)</option>
+            <option value="pib">PIB / PVC cladding (high ε)</option>
+            <option value="steel">Painted or galvanised steel (high ε)</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Fluid Temperature <span class="unit">°C</span></label>
+          <input type="number" id="fluidTemp" value="80" step="5" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Ambient Temperature <span class="unit">°C</span></label>
+          <input type="number" id="ambientTemp" value="20" step="1" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Dwell Period <span class="unit">minutes</span></label>
+          <input type="number" id="dwellMins" value="10" step="5" min="0" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Flange Factor <span class="unit">× valve jacket</span></label>
+          <input type="number" id="flangeFactor" value="0.40" step="0.05" min="0" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Target Temperature <span class="unit">°C</span></label>
+          <input type="number" id="targetTemp" value="60" step="5" oninput="renderCircuits()"
+                 title="Time-to-target shows how long each circuit takes to fall to this temperature">
+        </div>
+      </div>
+
+      <div style="background:rgba(122,209,228,0.10);border-left:3px solid var(--brand-blue);border-radius:4px;padding:11px 14px;font-size:12.5px;line-height:1.55;color:var(--ink-soft);margin-top:14px">
+        <strong style="color:var(--brand-blue-deep)">Method:</strong>
+        Q/L = ΔT ÷ [ ln(Dₒ/Dᵢ)/(2πλ) + 1/(πDₒh) ]. Insulation thickness is taken from the adi schedule by
+        <strong>nearest pipe OD</strong> (154 mm → DN150 → 70 mm), overridable per line.
+        Valve jackets use the Dynoteq-derived W/K coefficients (DN25–DN150); values outside that range are
+        extrapolated and marked <span style="color:#c28a00;font-weight:700">est</span>.
+        Flange pairs default to <strong>0.40 ×</strong> the valve coefficient — adjust above once measured data is available.
+        λ is temperature-dependent; the default suits typical LPHW mean temperatures.
+      </div>
+
+      <div id="thermalSummary" style="margin-top:18px"></div>
+    </div>
+  </div>
+
   <!-- Circuits Table -->
   <div class="card circuits-card">
     <div class="card-title">
@@ -1159,6 +1256,10 @@
             <th class="derived">Pipe Loss</th>
             <th class="derived">Total Loss</th>
             <th class="derived" title="Pipe + water weight per metre, and total mass over straight length">Weight &amp; Volume</th>
+            <th class="th-thermal" title="Number of valves on this circuit requiring insulation jackets">Valves</th>
+            <th class="th-thermal" title="Number of flange pairs on this circuit requiring insulation jackets">Flanges</th>
+            <th class="th-thermal" title="Insulation thickness — blank uses the BS 5422 schedule for this pipe OD">Insul. mm</th>
+            <th class="derived th-thermal" title="Heat loss from pipe, valve jackets and flange covers at the design ΔT">Heat Loss</th>
             <th class="derived">Status</th>
           </tr>
         </thead>
@@ -1733,6 +1834,10 @@ function newCircuit(overrides = {}) {
     consumerLoad: overrides.consumerLoad ?? 0,
     isLLH: overrides.isLLH ?? false,
     sizeOverride: overrides.sizeOverride ?? 0, // step offset from auto-recommendation
+    insThickness: overrides.insThickness ?? '',   // '' = use the schedule for this OD
+    finish: overrides.finish ?? 'project',        // 'project' = use the project default
+    valveCount: overrides.valveCount ?? 0,
+    flangeCount: overrides.flangeCount ?? 0,
   };
 }
 
@@ -1825,6 +1930,17 @@ function doPaste() {
   showToast(added + ' row' + (added === 1 ? '' : 's') + ' added');
 }
 
+function moveCircuit(id, dir) {
+  const i = circuits.findIndex(c => c.id === id);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= circuits.length) return;
+  const tmp = circuits[i];
+  circuits[i] = circuits[j];
+  circuits[j] = tmp;
+  renderCircuits();
+}
+
 function duplicateCircuit(id) {
   const src = circuits.find(c => c.id === id);
   if (!src) return;
@@ -1850,6 +1966,313 @@ function updateCircuitField(id, field, value) {
   if (field === 'length') lastLength = value;
   if (field === 'fittings') { value = Math.max(0, Math.min(40, parseFloat(value) || 0)); c.fittings = value; lastFittings = value; }
   renderCircuits();
+}
+
+
+/* ============================================================
+   THERMAL / HEAT LOSS MODULE
+   Method: BS EN ISO 12241 cylindrical conduction through insulation
+   plus an external surface film.
+
+     Q/L = (T_fluid - T_amb) / [ ln(Do/Di)/(2*pi*lambda) + 1/(pi*Do*h_se) ]
+
+   Pipe wall and internal film resistances are negligible for metal
+   pipe carrying water and are omitted (normal practice, BS 5422).
+   Insulation thicknesses follow the adi spec (BS 5422:2023 schedule).
+   ============================================================ */
+
+// --- Insulation thickness schedule (adi spec, keyed on pipe OD in mm) ---
+// Assigned by NEAREST outside diameter, so 154 -> DN150, 43 -> the 42 band, etc.
+const INSULATION_SCHEDULE = [
+  { od: 20,  t: 25 },
+  { od: 25,  t: 30 },
+  { od: 42,  t: 40 },
+  { od: 54,  t: 50 },
+  { od: 69,  t: 50 },
+  { od: 84,  t: 50 },
+  { od: 104, t: 50 },
+  { od: 129, t: 70 },
+  { od: 154, t: 70 },
+  { od: 204, t: 70 },
+  { od: 254, t: 70 },
+];
+
+function insulationThicknessForOD(od_mm) {
+  if (!od_mm) return 0;
+  let best = INSULATION_SCHEDULE[0], bestDiff = Infinity;
+  INSULATION_SCHEDULE.forEach(row => {
+    const d = Math.abs(od_mm - row.od);
+    if (d < bestDiff) { bestDiff = d; best = row; }
+  });
+  return best.t;
+}
+
+// --- Insulation materials: lambda (W/m.K) at typical LPHW mean temperature ---
+const INSULATION_TYPES = {
+  pir:         { label: 'PIR rigid closed-cell (33 kg/m\u00b3)', lambda: 0.025 },
+  mineralWool: { label: 'Mineral wool pipe section',          lambda: 0.037 },
+  phenolic:    { label: 'Phenolic foam',                      lambda: 0.021 },
+  elastomeric: { label: 'Elastomeric (nitrile rubber)',       lambda: 0.036 },
+  cellGlass:   { label: 'Cellular glass',                     lambda: 0.045 },
+  none:        { label: 'Bare pipe (no insulation)',          lambda: 0 },
+};
+
+// --- External surface coefficients h_se (W/m2.K), still indoor air ---
+// Bright metal is low-emissivity and loses markedly less than plastic finishes.
+const SURFACE_FINISHES = {
+  alu:   { label: 'Bright aluminium cladding (low \u03b5)', h: 5.0 },
+  foil:  { label: 'Foil facing only, unclad (low \u03b5)',  h: 5.5 },
+  pib:   { label: 'PIB / PVC cladding (high \u03b5)',       h: 9.5 },
+  steel: { label: 'Painted or galvanised steel (high \u03b5)', h: 10.0 },
+  bare:  { label: 'Bare pipe surface',                      h: 11.0 },
+};
+
+// --- Valve jacket heat loss coefficients (W/K) ---
+// Derived from Dynoteq outputs at 80 C surface / 20 C ambient (dT = 60 K),
+// based on 6000 operating hours per year. Supplied by adi.
+const VALVE_JACKET_WK = [
+  { dn: 25,  wk: 0.193 },
+  { dn: 32,  wk: 0.224 },
+  { dn: 40,  wk: 0.247 },
+  { dn: 50,  wk: 0.293 },
+  { dn: 65,  wk: 0.355 },
+  { dn: 80,  wk: 0.417 },
+  { dn: 100, wk: 0.540 },
+  { dn: 125, wk: 0.687 },
+  { dn: 150, wk: 0.864 },
+];
+
+const STANDARD_DN = [15,20,25,32,40,50,65,80,100,125,150,200,250,300,350,400,450,500,600,700,800];
+
+// Nominal DN for a circuit: parse from the size label where present
+// (DN-named materials), otherwise map the bore to the nearest standard DN.
+function nominalDNFor(nom, id_mm) {
+  if (nom && /^DN/i.test(nom)) {
+    const n = parseInt(String(nom).replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(n)) return n;
+  }
+  let best = STANDARD_DN[0], bestDiff = Infinity;
+  STANDARD_DN.forEach(dn => {
+    const d = Math.abs((id_mm || 0) - dn);
+    if (d < bestDiff) { bestDiff = d; best = dn; }
+  });
+  return best;
+}
+
+// Valve jacket W/K for a DN. Interpolates between tabulated points and
+// extrapolates beyond them using the nearest gradient (flagged as estimated).
+function valveJacketWK(dn) {
+  const t = VALVE_JACKET_WK;
+  if (dn <= t[0].dn) {
+    const g = (t[1].wk - t[0].wk) / (t[1].dn - t[0].dn);
+    return { wk: Math.max(0.02, t[0].wk + (dn - t[0].dn) * g), estimated: dn < t[0].dn };
+  }
+  const last = t[t.length - 1], prev = t[t.length - 2];
+  if (dn >= last.dn) {
+    const g = (last.wk - prev.wk) / (last.dn - prev.dn);
+    return { wk: last.wk + (dn - last.dn) * g, estimated: dn > last.dn };
+  }
+  for (let i = 0; i < t.length - 1; i++) {
+    if (dn >= t[i].dn && dn <= t[i + 1].dn) {
+      const f = (dn - t[i].dn) / (t[i + 1].dn - t[i].dn);
+      return { wk: t[i].wk + f * (t[i + 1].wk - t[i].wk), estimated: false };
+    }
+  }
+  return { wk: last.wk, estimated: true };
+}
+
+/* ---- Project-level thermal settings readers ---- */
+function thermalEnabled() {
+  const el = document.getElementById('thermalEnabled');
+  return el ? el.checked : false;
+}
+function getInsulationLambda() {
+  const v = parseFloat(document.getElementById('insLambda').value);
+  return isNaN(v) ? 0.025 : Math.max(0, v);
+}
+function getSurfaceH(key) {
+  const k = key || (document.getElementById('surfaceFinish') || {}).value || 'alu';
+  const f = SURFACE_FINISHES[k] || SURFACE_FINISHES.alu;
+  return f.h;
+}
+function getFluidTemp()   { const v = parseFloat(document.getElementById('fluidTemp').value);   return isNaN(v) ? 80 : v; }
+function getAmbientTemp() { const v = parseFloat(document.getElementById('ambientTemp').value); return isNaN(v) ? 20 : v; }
+function getDwellMins()   { const v = parseFloat(document.getElementById('dwellMins').value);   return isNaN(v) ? 10 : Math.max(0, v); }
+function getFlangeFactor(){ const v = parseFloat(document.getElementById('flangeFactor').value);return isNaN(v) ? 0.40 : Math.max(0, v); }
+
+/* ---- Core: thermal conductance (UA) for one circuit ----
+   UA in W/K is the temperature-independent property of the circuit.
+   Everything else (loss, cascade, decay) is derived from it, so the
+   three views can never disagree.                                    */
+function circuitUA(c, result) {
+  const out = { ua: 0, uaPipe: 0, uaValve: 0, uaFlange: 0,
+                thickness_mm: 0, lambda: 0, h_se: 0, rPerM: 0,
+                dn: 0, valveEstimated: false };
+  if (!result || result.error || !result.recommended) return out;
+
+  const insType = (document.getElementById('insType') || {}).value || 'pir';
+  const lambda = (insType === 'none') ? 0 : getInsulationLambda();
+  const finishKey = (c.finish && c.finish !== 'project')
+      ? c.finish
+      : ((document.getElementById('surfaceFinish') || {}).value || 'alu');
+  const h_se = getSurfaceH(insType === 'none' ? 'bare' : finishKey);
+
+  const od_mm = result.recommended.od;
+  let thk = (c.insThickness === '' || c.insThickness === null || c.insThickness === undefined)
+      ? insulationThicknessForOD(od_mm)
+      : (parseFloat(c.insThickness) || 0);
+  if (insType === 'none') thk = 0;
+
+  const Di = od_mm / 1000;
+  const Do = (od_mm + 2 * thk) / 1000;
+
+  let R = 0;
+  if (thk > 0 && lambda > 0) R += Math.log(Do / Di) / (2 * Math.PI * lambda);
+  R += 1 / (Math.PI * Do * h_se);
+
+  const length = parseFloat(c.length) || 0;
+  const dn = nominalDNFor(result.recommended.nom, result.recommended.id_mm);
+  const vj = valveJacketWK(dn);
+  const nValves  = parseFloat(c.valveCount)  || 0;
+  const nFlanges = parseFloat(c.flangeCount) || 0;
+
+  out.rPerM        = R;
+  out.thickness_mm = thk;
+  out.lambda       = lambda;
+  out.h_se         = h_se;
+  out.dn           = dn;
+  out.valveEstimated = vj.estimated;
+  out.uaPipe   = R > 0 ? length / R : 0;
+  out.uaValve  = nValves * vj.wk;
+  out.uaFlange = nFlanges * vj.wk * getFlangeFactor();
+  out.ua = out.uaPipe + out.uaValve + out.uaFlange;
+  return out;
+}
+
+/* ---- Heat loss at a given deltaT (all terms linear in deltaT) ---- */
+function circuitHeatLoss(c, result, deltaT) {
+  const u = circuitUA(c, result);
+  const dT = (deltaT === undefined) ? (getFluidTemp() - getAmbientTemp()) : deltaT;
+  return {
+    thickness_mm: u.thickness_mm, lambda: u.lambda, h_se: u.h_se,
+    dn: u.dn, valveEstimated: u.valveEstimated, ua: u.ua,
+    wPerM:   u.rPerM > 0 ? dT / u.rPerM : 0,
+    pipeW:   u.uaPipe   * dT,
+    valveW:  u.uaValve  * dT,
+    flangeW: u.uaFlange * dT,
+    totalW:  u.ua       * dT,
+  };
+}
+
+/* ---- RUNNING: temperature cascade along the ticked index run ----
+   Water flowing through a segment leaves at
+     T_out = T_amb + (T_in - T_amb) * exp(-UA / (mdot * cp))
+   which is exact for steady flow and constant ambient (it accounts for
+   the loss rate falling as the water cools along the run).
+   Segments are taken in list order, so the ticked rows must run
+   plant -> index terminal top to bottom.                              */
+function indexCascade(turndownPct) {
+  const cp = (parseFloat(document.getElementById('cp').value) || 4.182) * 1000; // J/kg.K
+  const Tamb = getAmbientTemp();
+  const scale = (turndownPct === undefined ? 100 : turndownPct) / 100;
+  let T = getFluidTemp();
+  const segs = [];
+  circuits.forEach(c => {
+    if (!c.isIndex) return;
+    const r = calculateCircuit(c);
+    if (r.error || !r.recommended) return;
+    const u = circuitUA(c, r);
+    const mdot = (r.mdot || 0) * scale;
+    const Tin = T;
+    let Tout = Tin;
+    if (mdot > 0 && u.ua > 0) {
+      Tout = Tamb + (Tin - Tamb) * Math.exp(-u.ua / (mdot * cp));
+    }
+    const Q = mdot * cp * (Tin - Tout);
+    segs.push({ ref: c.ref, nom: r.recommended.nom, length: parseFloat(c.length) || 0,
+                lps: (r.vflow_ls || 0) * scale, ua: u.ua, Tin, Tout,
+                drop: Tin - Tout, Q, hasConsumer: (parseFloat(c.consumerLoad) || 0) > 0 });
+    T = Tout;
+  });
+  return { segs, Tstart: getFluidTemp(), Tend: T, totalDrop: getFluidTemp() - T };
+}
+
+/* ---- DWELL: exponential decay, exact at any duration ----
+   T(t) = T_amb + (T0 - T_amb) * exp(-t / tau),  tau = m*cp / UA        */
+function decayTemp(T0, Tamb, tau_s, t_s) {
+  if (tau_s <= 0) return Tamb;
+  return Tamb + (T0 - Tamb) * Math.exp(-t_s / tau_s);
+}
+
+// Time (hours) for a body to fall from T0 to Ttarget. null if unreachable.
+function timeToTarget(T0, Tamb, tau_s, Ttarget) {
+  if (tau_s <= 0) return null;
+  if (Ttarget <= Tamb) return null;      // asymptote - never reached
+  if (Ttarget >= T0) return 0;
+  return -tau_s * Math.log((Ttarget - Tamb) / (T0 - Tamb)) / 3600;
+}
+
+// Per-circuit decay properties (each circuit cooling in isolation)
+function circuitDecay(c) {
+  const r = calculateCircuit(c);
+  if (r.error || !r.recommended) return null;
+  const u = circuitUA(c, r);
+  const cp = (parseFloat(document.getElementById('cp').value) || 4.182) * 1000;
+  const m  = r.weights.water_kg_total;
+  const tau = (u.ua > 0 && m > 0) ? (m * cp / u.ua) : 0;
+  return { ref: c.ref, nom: r.recommended.nom, litres: r.weights.water_l_total,
+           mass: m, ua: u.ua, tau_s: tau, isIndex: !!c.isIndex };
+}
+
+// System treated as one mixed volume
+function systemDecay() {
+  let m = 0, ua = 0;
+  circuits.forEach(c => {
+    const d = circuitDecay(c);
+    if (!d) return;
+    m += d.mass; ua += d.ua;
+  });
+  const cp = (parseFloat(document.getElementById('cp').value) || 4.182) * 1000;
+  return { mass: m, ua, tau_s: (ua > 0 && m > 0) ? (m * cp / ua) : 0 };
+}
+
+function getTargetTemp() {
+  const v = parseFloat((document.getElementById('targetTemp') || {}).value);
+  return isNaN(v) ? 60 : v;
+}
+
+/* ---- System totals ---- */
+function systemHeatLoss(deltaT) {
+  let totalW = 0, indexW = 0, pipeW = 0, valveW = 0, flangeW = 0, waterKg = 0;
+  circuits.forEach(c => {
+    const r = calculateCircuit(c);
+    if (r.error || !r.recommended) return;
+    const h = circuitHeatLoss(c, r, deltaT);
+    totalW += h.totalW; pipeW += h.pipeW; valveW += h.valveW; flangeW += h.flangeW;
+    if (c.isIndex) indexW += h.totalW;
+    waterKg += r.weights.water_kg_total;
+  });
+  return { totalW, indexW, pipeW, valveW, flangeW, waterKg };
+}
+
+// Temperature the system contents fall by over a dwell period with no input
+function dwellTempDrop(totalW, waterKg, mins) {
+  const cp = parseFloat(document.getElementById('cp').value) || 4.182;  // kJ/kg.K
+  if (waterKg <= 0 || cp <= 0) return 0;
+  const joules = totalW * mins * 60;
+  return joules / (waterKg * cp * 1000);
+}
+
+function onInsTypeChange() {
+  const t = (document.getElementById('insType') || {}).value || 'pir';
+  const def = INSULATION_TYPES[t];
+  if (def && t !== 'none') document.getElementById('insLambda').value = def.lambda;
+  renderCircuits();
+}
+
+function onThermalToggle() {
+  document.getElementById('thermalSettings').style.display =
+    document.getElementById('thermalEnabled').checked ? 'block' : 'none';
 }
 
 function calculateCircuit(c) {
@@ -1970,6 +2393,174 @@ function calculateCircuit(c) {
 }
 
 /* ============ RENDER CIRCUITS ============ */
+function renderThermalSummary() {
+  const el = document.getElementById('thermalSummary');
+  if (!el) return;
+  if (!thermalEnabled()) { el.innerHTML = ''; return; }
+
+  const designDT = getFluidTemp() - getAmbientTemp();
+  const mins = getDwellMins();
+
+  // Every term is linear in deltaT, so evaluate once at 1 K and scale exactly.
+  const base = systemHeatLoss(1);
+  const at = dt => ({
+    totalW:  base.totalW  * dt,
+    indexW:  base.indexW  * dt,
+    pipeW:   base.pipeW   * dt,
+    valveW:  base.valveW  * dt,
+    flangeW: base.flangeW * dt,
+  });
+
+  const d = at(designDT);
+  const waterKg = base.waterKg;
+  const drop = dwellTempDrop(d.totalW, waterKg, mins);
+  const kJ   = d.totalW * mins * 60 / 1000;
+  const kWh  = d.totalW * mins / 60 / 1000;
+
+  // 5 K incremental table up to the design deltaT
+  const maxDT = Math.max(5, Math.ceil(designDT / 5) * 5);
+  let rows = '';
+  for (let dt = 5; dt <= maxDT && dt <= 100; dt += 5) {
+    const v = at(dt);
+    const dr = dwellTempDrop(v.totalW, waterKg, mins);
+    const isDesign = Math.abs(dt - designDT) < 2.5;
+    rows += '<tr' + (isDesign ? ' style="background:rgba(122,209,228,0.18);font-weight:700"' : '') + '>'
+      + '<td>' + dt + ' K' + (isDesign ? ' <span style="font-size:9px;color:var(--brand-blue-deep)">DESIGN</span>' : '') + '</td>'
+      + '<td class="num">' + v.totalW.toFixed(0) + '</td>'
+      + '<td class="num">' + (v.totalW / 1000).toFixed(2) + '</td>'
+      + '<td class="num">' + (v.totalW * mins * 60 / 1000).toFixed(0) + '</td>'
+      + '<td class="num">' + dr.toFixed(2) + '</td>'
+      + '</tr>';
+  }
+
+  const tileCss = 'background:var(--white);border:1px solid var(--line-strong);border-radius:4px;padding:12px 14px;text-align:center';
+  const labCss  = "font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)";
+  const valCss  = 'font-size:22px;font-weight:800;color:var(--brand-blue-deep);margin:2px 0';
+
+  el.innerHTML =
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
+    +   '<div style="' + tileCss + '"><div style="' + labCss + '">System Standing Loss</div><div style="' + valCss + '">' + (d.totalW/1000).toFixed(2) + '</div><div style="font-size:10px;color:var(--muted)">kW at ' + designDT.toFixed(0) + ' K</div></div>'
+    +   '<div style="' + tileCss + '"><div style="' + labCss + '">Index Run Loss</div><div style="' + valCss + '">' + d.indexW.toFixed(0) + '</div><div style="font-size:10px;color:var(--muted)">W \u00b7 ticked circuits</div></div>'
+    +   '<div style="' + tileCss + '"><div style="' + labCss + '">Energy per ' + mins + ' min</div><div style="' + valCss + '">' + kJ.toFixed(0) + '</div><div style="font-size:10px;color:var(--muted)">kJ (' + kWh.toFixed(2) + ' kWh)</div></div>'
+    +   '<div style="' + tileCss + ';border-color:var(--brand-blue);border-width:2px"><div style="' + labCss + '">Temp Drop in ' + mins + ' min</div><div style="' + valCss + '">' + drop.toFixed(2) + '</div><div style="font-size:10px;color:var(--muted)">\u00b0C \u00b7 ' + waterKg.toFixed(0) + ' kg contents</div></div>'
+    + '</div>'
+    + '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:12px">'
+    +   'Split at design \u0394T: pipework <strong>' + d.pipeW.toFixed(0) + ' W</strong>'
+    +   ' \u00b7 valve jackets <strong>' + d.valveW.toFixed(0) + ' W</strong>'
+    +   ' \u00b7 flange covers <strong>' + d.flangeW.toFixed(0) + ' W</strong>'
+    + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +   '<thead><tr style="background:var(--brand-blue-dark);color:var(--white)">'
+    +     '<th style="text-align:left;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">\u0394T</th>'
+    +     '<th style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">Loss W</th>'
+    +     '<th style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">kW</th>'
+    +     '<th style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">kJ / ' + mins + ' min</th>'
+    +     '<th style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">\u00b0C drop</th>'
+    +   '</tr></thead><tbody>' + rows + '</tbody></table>'
+    + '<div style="font-size:11px;color:var(--muted);margin-top:8px">Losses are linear with \u0394T. Temperature drop assumes no heat input and perfect mixing of the system contents.</div>'
+    + buildCascadeHTML()
+    + buildDecayHTML();
+}
+
+/* ---- RUNNING: index-run temperature cascade table ---- */
+function buildCascadeHTML() {
+  const cas = indexCascade();
+  const hdr = '<h4 style="font-family:\'Barlow Condensed\',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink);margin:22px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--brand-blue)">Index Run Temperature Cascade <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px">\u2014 system running</span></h4>';
+  if (cas.segs.length === 0) {
+    return hdr + '<div style="font-size:12px;color:var(--muted);padding:8px 0">Tick the Index box on the circuits forming the flow path to see the temperature cascade.</div>';
+  }
+  let rows = '';
+  cas.segs.forEach(s => {
+    rows += '<tr>'
+      + '<td>' + escHtml(s.ref) + (s.hasConsumer ? ' <span style="font-size:9px;background:var(--brand-blue);color:var(--black);padding:1px 4px;border-radius:2px;font-weight:700">CONSUMER</span>' : '') + '</td>'
+      + '<td class="num">' + s.nom + '</td>'
+      + '<td class="num">' + s.length + '</td>'
+      + '<td class="num">' + s.lps.toFixed(2) + '</td>'
+      + '<td class="num">' + s.Tin.toFixed(3) + '</td>'
+      + '<td class="num">' + s.Tout.toFixed(3) + '</td>'
+      + '<td class="num">' + s.drop.toFixed(4) + '</td>'
+      + '<td class="num">' + (s.Q/1000).toFixed(3) + '</td>'
+      + '</tr>';
+  });
+  const th = 'style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase"';
+  return hdr
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +   '<thead><tr style="background:var(--brand-blue-dark);color:var(--white)">'
+    +     '<th style="text-align:left;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">Segment</th>'
+    +     '<th ' + th + '>Size</th><th ' + th + '>Length m</th><th ' + th + '>Flow l/s</th>'
+    +     '<th ' + th + '>T in \u00b0C</th><th ' + th + '>T out \u00b0C</th><th ' + th + '>Drop K</th><th ' + th + '>Loss kW</th>'
+    +   '</tr></thead><tbody>' + rows + '</tbody></table>'
+    + '<div style="background:rgba(122,209,228,0.12);border-left:3px solid var(--brand-blue);padding:9px 12px;margin-top:8px;font-size:12.5px">'
+    +   'Delivered at the index terminal: <strong>' + cas.Tend.toFixed(2) + ' \u00b0C</strong>'
+    +   ' \u2014 a total drop of <strong>' + cas.totalDrop.toFixed(3) + ' K</strong> from ' + cas.Tstart.toFixed(1) + ' \u00b0C at the plant.'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-top:6px">Segments are taken in list order \u2014 use the \u25b2\u25bc buttons so the ticked rows run plant to terminal. Drop is inversely proportional to flow, so it grows at part load.</div>';
+}
+
+/* ---- DWELL: per-circuit and whole-system decay ---- */
+function buildDecayHTML() {
+  const Tamb = getAmbientTemp();
+  const T0 = getFluidTemp();
+  const Ttgt = getTargetTemp();
+  const HOURS = [1,2,4,6,8,12,18,24];
+
+  const hdr = '<h4 style="font-family:\'Barlow Condensed\',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink);margin:22px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--brand-blue)">Dwell Decay <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px">\u2014 system off, no heat input</span></h4>';
+
+  const sys = systemDecay();
+  let sysRows = '';
+  for (let hh = 1; hh <= 24; hh++) {
+    const T = decayTemp(T0, Tamb, sys.tau_s, hh*3600);
+    const kW = sys.ua * (T - Tamb) / 1000;
+    const below = T < Ttgt;
+    sysRows += '<tr' + (below ? ' style="color:#c74418"' : '') + '>'
+      + '<td>' + hh + ' h</td>'
+      + '<td class="num">' + T.toFixed(2) + '</td>'
+      + '<td class="num">' + (T0 - T).toFixed(2) + '</td>'
+      + '<td class="num">' + kW.toFixed(2) + '</td>'
+      + '</tr>';
+  }
+  const sysTTT = timeToTarget(T0, Tamb, sys.tau_s, Ttgt);
+
+  let cRows = '';
+  circuits.forEach(c => {
+    const d = circuitDecay(c);
+    if (!d || d.tau_s <= 0) return;
+    const tt = timeToTarget(T0, Tamb, d.tau_s, Ttgt);
+    cRows += '<tr' + (d.isIndex ? ' style="background:rgba(122,209,228,0.10)"' : '') + '>'
+      + '<td>' + escHtml(d.ref) + '</td><td class="num">' + d.nom + '</td>'
+      + '<td class="num">' + d.litres.toFixed(0) + '</td>'
+      + '<td class="num">' + (d.tau_s/3600).toFixed(1) + '</td>'
+      + HOURS.map(hh => {
+          const T = decayTemp(T0, Tamb, d.tau_s, hh*3600);
+          return '<td class="num"' + (T < Ttgt ? ' style="color:#c74418;font-weight:600"' : '') + '>' + T.toFixed(1) + '</td>';
+        }).join('')
+      + '<td class="num"><strong>' + (tt === null ? '\u2014' : tt.toFixed(1)) + '</strong></td>'
+      + '</tr>';
+  });
+
+  const th = 'style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase"';
+  return hdr
+    + '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px">Exact exponential decay, T = T<sub>amb</sub> + (T\u2080 \u2212 T<sub>amb</sub>)\u00b7e<sup>\u2212t/\u03c4</sup>, valid at any duration. Figures in <span style="color:#c74418">red</span> are below the ' + Ttgt.toFixed(0) + ' \u00b0C target.</div>'
+    + '<div style="font-weight:700;font-size:12px;margin:12px 0 5px">System as one mixed volume <span style="font-weight:400;color:var(--muted)">\u2014 \u03c4 = ' + (sys.tau_s/3600).toFixed(1) + ' h, ' + sys.mass.toFixed(0) + ' kg, UA ' + sys.ua.toFixed(1) + ' W/K</span></div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +   '<thead><tr style="background:var(--brand-blue-dark);color:var(--white)">'
+    +     '<th style="text-align:left;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">Elapsed</th>'
+    +     '<th ' + th + '>Temp \u00b0C</th><th ' + th + '>Lost K</th><th ' + th + '>Loss kW</th>'
+    +   '</tr></thead><tbody>' + sysRows + '</tbody></table>'
+    + '<div style="background:rgba(122,209,228,0.12);border-left:3px solid var(--brand-blue);padding:9px 12px;margin-top:8px;font-size:12.5px">'
+    +   'System reaches <strong>' + Ttgt.toFixed(0) + ' \u00b0C</strong> after <strong>' + (sysTTT === null ? 'never (ambient is above target)' : sysTTT.toFixed(1) + ' hours') + '</strong>.'
+    + '</div>'
+    + '<div style="font-weight:700;font-size:12px;margin:18px 0 5px">Each circuit isolated <span style="font-weight:400;color:var(--muted)">\u2014 valves closed, no circulation</span></div>'
+    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:640px">'
+    +   '<thead><tr style="background:var(--brand-blue-dark);color:var(--white)">'
+    +     '<th style="text-align:left;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">Circuit</th>'
+    +     '<th ' + th + '>Size</th><th ' + th + '>Litres</th><th ' + th + '>\u03c4 h</th>'
+    +     HOURS.map(hh => '<th ' + th + '>' + hh + ' h</th>').join('')
+    +     '<th ' + th + '>To ' + Ttgt.toFixed(0) + '\u00b0C</th>'
+    +   '</tr></thead><tbody>' + (cRows || '<tr><td colspan="13">No circuits.</td></tr>') + '</tbody></table></div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-top:6px">Isolated decay is the conservative view \u2014 small-bore branches have far more surface area per litre and cool much faster than the mains. If the system stays interconnected with the pump off, the mixed-volume figure above is more representative.</div>';
+}
+
 function renderCircuits() {
   const tbody = document.getElementById('circuitsBody');
   tbody.innerHTML = '';
@@ -1986,7 +2577,7 @@ function renderCircuits() {
   let indexLoss_kPa = 0, sumLoss_kPa = 0;
   let totalPipeKg = 0, totalWaterKg = 0, totalWaterL = 0;
 
-  circuits.forEach(c => {
+  circuits.forEach((c, idx) => {
     const result = calculateCircuit(c);
     const tr = document.createElement('tr');
     if (c.isIndex) tr.classList.add('is-index-run');
@@ -2002,7 +2593,7 @@ function renderCircuits() {
 
     let statusBadge = '', recText = '&mdash;', velText = '&mdash;', pdText = '&mdash;';
     let kwDerived = '&mdash;', mdotDerived = '&mdash;', lpsDerived = '&mdash;', m3hDerived = '&mdash;';
-    let pipeLossText = '&mdash;', totalLossText = '&mdash;', weightText = '&mdash;';
+    let pipeLossText = '&mdash;', totalLossText = '&mdash;', weightText = '&mdash;', heatText = '&mdash;';
 
     if (!result.error) {
       totalKw   += result.kw;
@@ -2080,6 +2671,21 @@ function renderCircuits() {
           +   '<strong>' + installed_kg_total.toFixed(0) + ' kg installed</strong> · <strong>' + w.water_l_total.toFixed(1) + ' L</strong>'
           + '</div>'
           + '</div>';
+
+        // ---- Heat loss for this circuit ----
+        if (thermalEnabled()) {
+          const hl = circuitHeatLoss(c, result, undefined);
+          const est = hl.valveEstimated && ((parseFloat(c.valveCount)||0) > 0 || (parseFloat(c.flangeCount)||0) > 0)
+            ? ' <span style="color:#c28a00;font-weight:700" title="Valve coefficient extrapolated beyond the DN25\u2013DN150 data">est</span>' : '';
+          heatText = '<div style="line-height:1.35">'
+            + '<strong style="color:var(--brand-blue-deep);font-size:14px">' + hl.totalW.toFixed(0) + '</strong>'
+            + ' <span style="color:var(--muted);font-size:10px">W total</span>' + est
+            + '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + hl.wPerM.toFixed(1) + ' W/m \u00b7 ' + hl.thickness_mm + ' mm insul.</div>'
+            + ((hl.valveW + hl.flangeW) > 0
+                ? '<div style="font-size:10px;color:var(--ink-soft);margin-top:2px">Pipe ' + hl.pipeW.toFixed(0) + ' + valves ' + hl.valveW.toFixed(0) + ' + flanges ' + hl.flangeW.toFixed(0) + ' W</div>'
+                : '')
+            + '</div>';
+        }
       }
 
       if (result.status === 'ok')                statusBadge = (result.llhActive ? '<span class="badge badge-llh" style="margin-right:4px">LLH</span>' : '') + '<span class="badge badge-rec">✓ OK</span>';
@@ -2090,7 +2696,11 @@ function renderCircuits() {
     }
 
     tr.innerHTML =
-      '<td class="td-delete"><button class="row-dup" onclick="duplicateCircuit(' + c.id + ')" title="Duplicate this circuit">\u29c9</button><button class="row-delete" onclick="deleteCircuit(' + c.id + ')" title="Remove">\xd7</button></td>'
+      '<td class="td-delete">'
+      + '<button class="row-move" onclick="moveCircuit(' + c.id + ',-1)" title="Move up \u2014 order sets the index-run flow sequence"' + (idx === 0 ? ' disabled' : '') + '>\u25b2</button>'
+      + '<button class="row-move" onclick="moveCircuit(' + c.id + ',1)" title="Move down \u2014 order sets the index-run flow sequence"' + (idx === circuits.length - 1 ? ' disabled' : '') + '>\u25bc</button>'
+      + '<button class="row-dup" onclick="duplicateCircuit(' + c.id + ')" title="Duplicate this circuit">\u29c9</button>'
+      + '<button class="row-delete" onclick="deleteCircuit(' + c.id + ')" title="Remove">\xd7</button></td>'
       + '<td class="td-index" data-label="Index Run"><div class="index-check-wrap"><input type="checkbox" class="index-check" ' + (c.isIndex ? 'checked' : '') + ' onchange="updateCircuitField(' + c.id + ',\'isIndex\',this.checked)"></div></td>'
       + '<td class="td-index" data-label="LLH Header"><div class="index-check-wrap"><input type="checkbox" class="index-check" ' + (c.isLLH ? 'checked' : '') + ' onchange="updateCircuitField(' + c.id + ',\'isLLH\',this.checked)" title="Size as low loss header"></div></td>'
       + '<td class="td-ref" data-label="Reference"><input type="text" value="' + c.ref.replace(/"/g,'&quot;') + '" onchange="updateCircuitField(' + c.id + ',\'ref\',this.value)"></td>'
@@ -2123,6 +2733,10 @@ function renderCircuits() {
       + '<td class="derived-cell" data-label="Pipe Loss (kPa)">' + pipeLossText + '</td>'
       + '<td class="derived-cell" data-label="Total Loss">' + totalLossText + '</td>'
       + '<td class="derived-cell" data-label="Weight &amp; Volume">' + weightText + '</td>'
+      + '<td class="td-thermal" data-label="Valves"><input type="number" value="' + (c.valveCount || 0) + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'valveCount\',this.value)"></td>'
+      + '<td class="td-thermal" data-label="Flanges"><input type="number" value="' + (c.flangeCount || 0) + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'flangeCount\',this.value)"></td>'
+      + '<td class="td-thermal" data-label="Insul. mm"><input type="number" value="' + (c.insThickness === '' || c.insThickness === undefined ? '' : c.insThickness) + '" step="5" min="0" placeholder="' + (result.recommended ? insulationThicknessForOD(result.recommended.od) : '') + '" title="Blank = schedule default" onchange="updateCircuitField(' + c.id + ',\'insThickness\',this.value)"></td>'
+      + '<td class="derived-cell td-thermal" data-label="Heat Loss">' + heatText + '</td>'
       + '<td data-label="Status">' + statusBadge + '</td>';
 
     tbody.appendChild(tr);
@@ -2155,6 +2769,8 @@ function renderCircuits() {
   document.getElementById('t-sysflow').textContent = sysFlow.toFixed(2);
   document.getElementById('t-syshead').textContent = sysHeadBar.toFixed(2);
   document.getElementById('t-conskw').textContent  = consumerKw.toFixed(1);
+  document.body.classList.toggle('thermal-on', thermalEnabled());
+  renderThermalSummary();
   document.getElementById('t-maxloss').textContent = indexLoss_kPa.toFixed(1);
   document.getElementById('t-sumloss').textContent = sumLoss_kPa.toFixed(1);
   document.getElementById('circuitCountHint').textContent = circuits.length + ' circuit' + (circuits.length===1?'':'s');
@@ -2664,6 +3280,138 @@ function exportPDFReport() {
     + '<table class="rpt"><thead><tr><th>Circuit</th><th class="n">Size</th><th class="n">Design l/s</th><th class="n">Design kW</th><th class="n">Max l/s @ '+limitPd+' Pa/m</th><th class="n">Peak kW available</th><th class="n">Uplift</th></tr></thead><tbody>'
     + (capRows || '<tr><td colspan="7">No circuits.</td></tr>') + '</tbody></table>';
 
+  // ===== Thermal / heat loss section =====
+  let thermalSection = '';
+  if (thermalEnabled()) {
+    const designDT = getFluidTemp() - getAmbientTemp();
+    const mins = getDwellMins();
+    const insKey = (document.getElementById('insType') || {}).value || 'pir';
+    const insLabel = (INSULATION_TYPES[insKey] || {}).label || insKey;
+    const finKey = (document.getElementById('surfaceFinish') || {}).value || 'alu';
+    const finLabel = (SURFACE_FINISHES[finKey] || {}).label || finKey;
+    const lam = getInsulationLambda();
+
+    const base = systemHeatLoss(1);
+    const atDT = dt => ({ totalW: base.totalW*dt, indexW: base.indexW*dt,
+                          pipeW: base.pipeW*dt, valveW: base.valveW*dt, flangeW: base.flangeW*dt });
+    const dsn = atDT(designDT);
+    const drop = dwellTempDrop(dsn.totalW, base.waterKg, mins);
+
+    // Per-circuit schedule
+    let anyEst = false, totV = 0, totF = 0;
+    const hlRows = results.map(({c,r}) => {
+      if (r.error || !r.recommended) return '';
+      const h = circuitHeatLoss(c, r, designDT);
+      const nv = parseFloat(c.valveCount)||0, nf = parseFloat(c.flangeCount)||0;
+      totV += nv; totF += nf;
+      if (h.valveEstimated && (nv > 0 || nf > 0)) anyEst = true;
+      const estMark = (h.valveEstimated && (nv > 0 || nf > 0)) ? ' *' : '';
+      return '<tr><td>'+escHtml(c.ref)+(c.isIndex?' <span class="tag">INDEX</span>':'')+'</td>'
+        + '<td class="n">'+r.recommended.nom+'</td><td class="n">'+h.thickness_mm+'</td>'
+        + '<td class="n">'+(parseFloat(c.length)||0)+'</td>'
+        + '<td class="n">'+h.wPerM.toFixed(1)+'</td><td class="n">'+h.pipeW.toFixed(0)+'</td>'
+        + '<td class="n">'+nv+'</td><td class="n">'+h.valveW.toFixed(0)+estMark+'</td>'
+        + '<td class="n">'+nf+'</td><td class="n">'+h.flangeW.toFixed(0)+'</td>'
+        + '<td class="n"><strong>'+h.totalW.toFixed(0)+'</strong></td></tr>';
+    }).join('');
+
+    // 5 K increment table
+    const maxDT = Math.max(5, Math.ceil(designDT/5)*5);
+    let dtRows = '';
+    for (let dt = 5; dt <= maxDT && dt <= 100; dt += 5) {
+      const v = atDT(dt);
+      const dr = dwellTempDrop(v.totalW, base.waterKg, mins);
+      const isD = Math.abs(dt - designDT) < 2.5;
+      dtRows += '<tr'+(isD?' class="sub"':'')+'><td>'+dt+' K'+(isD?' (design)':'')+'</td>'
+        + '<td class="n">'+v.totalW.toFixed(0)+'</td><td class="n">'+(v.totalW/1000).toFixed(2)+'</td>'
+        + '<td class="n">'+(v.totalW*mins*60/1000).toFixed(0)+'</td><td class="n">'+dr.toFixed(2)+'</td></tr>';
+    }
+
+    thermalSection = '<h2>7. Thermal Performance &amp; Standing Heat Loss</h2>'
+      + '<p>Heat loss is calculated to <strong>BS EN ISO 12241</strong> for steady-state cylindrical conduction through the insulation with an external surface film: '
+      + 'Q/L = \u0394T \u00f7 [ ln(D\u2092/D\u1d62)/(2\u03c0\u03bb) + 1/(\u03c0D\u2092h\u209b\u2091) ]. Pipe wall and internal film resistances are negligible for metal pipe carrying water and are omitted. '
+      + 'Insulation is <strong>'+escHtml(insLabel)+'</strong> at \u03bb = '+lam.toFixed(3)+' W/m\u00b7K, finished with <strong>'+escHtml(finLabel)+'</strong>. '
+      + 'Thicknesses follow the adi schedule to BS 5422:2023, assigned by nearest pipe outside diameter. '
+      + 'Conditions: fluid '+getFluidTemp().toFixed(0)+' \u00b0C, ambient '+getAmbientTemp().toFixed(0)+' \u00b0C, \u0394T '+designDT.toFixed(0)+' K.</p>'
+      + '<div class="tiles">'
+      +   '<div class="tile"><div class="v">'+(dsn.totalW/1000).toFixed(2)+'</div><div class="l">Standing Loss kW</div></div>'
+      +   '<div class="tile"><div class="v">'+dsn.indexW.toFixed(0)+'</div><div class="l">Index Run W</div></div>'
+      +   '<div class="tile"><div class="v">'+(dsn.totalW*mins*60/1000).toFixed(0)+'</div><div class="l">kJ per '+mins+' min</div></div>'
+      +   '<div class="tile"><div class="v">'+drop.toFixed(2)+'</div><div class="l">\u00b0C drop in '+mins+' min</div></div>'
+      + '</div>'
+      + '<p>At the design \u0394T the split is pipework <strong>'+dsn.pipeW.toFixed(0)+' W</strong>, valve jackets <strong>'+dsn.valveW.toFixed(0)+' W</strong> ('+totV+' items) and flange covers <strong>'+dsn.flangeW.toFixed(0)+' W</strong> ('+totF+' items). '
+      + 'With no heat input the system contents ('+base.waterKg.toFixed(0)+' kg) fall approximately <strong>'+drop.toFixed(2)+' \u00b0C over '+mins+' minutes</strong>, assuming perfect mixing.</p>'
+      + '<h3 style="font-size:11px;color:#0b2a38;margin:14px 0 6px">Circuit heat loss schedule</h3>'
+      + '<table class="rpt"><thead><tr><th>Circuit</th><th class="n">Size</th><th class="n">Insul. mm</th><th class="n">Length m</th>'
+      + '<th class="n">W/m</th><th class="n">Pipe W</th><th class="n">Valves</th><th class="n">Valve W</th><th class="n">Flanges</th><th class="n">Flange W</th><th class="n">Total W</th></tr></thead><tbody>'
+      + (hlRows || '<tr><td colspan="11">No circuits.</td></tr>') + '</tbody></table>'
+      + (anyEst ? '<p style="font-size:8.5pt;color:#c28a00">* Valve jacket coefficient extrapolated beyond the DN25\u2013DN150 supplied data \u2014 treat as an estimate.</p>' : '')
+      + '<h3 style="font-size:11px;color:#0b2a38;margin:14px 0 6px">Loss at 5 K increments</h3>'
+      + '<table class="rpt"><thead><tr><th>\u0394T</th><th class="n">Loss W</th><th class="n">kW</th><th class="n">kJ per '+mins+' min</th><th class="n">\u00b0C drop</th></tr></thead><tbody>'
+      + dtRows + '</tbody></table>'
+      + '<p style="font-size:8.5pt;color:#5a6875">Losses are linear with \u0394T. Valve jacket coefficients are derived from Dynoteq outputs at 80 \u00b0C surface / 20 \u00b0C ambient (\u0394T 60 K, 6000 h/yr). '
+      + 'Flange covers are taken at '+getFlangeFactor().toFixed(2)+' \u00d7 the valve coefficient of the same size. \u03bb varies with mean insulation temperature; a single declared value is used here.</p>';
+    // --- Running cascade ---
+    const cas = indexCascade();
+    if (cas.segs.length > 0) {
+      let cr = '';
+      cas.segs.forEach(s => {
+        cr += '<tr><td>'+escHtml(s.ref)+(s.hasConsumer?' <span class="tag">CONSUMER</span>':'')+'</td>'
+          + '<td class="n">'+s.nom+'</td><td class="n">'+s.length+'</td><td class="n">'+s.lps.toFixed(2)+'</td>'
+          + '<td class="n">'+s.Tin.toFixed(3)+'</td><td class="n">'+s.Tout.toFixed(3)+'</td>'
+          + '<td class="n">'+s.drop.toFixed(4)+'</td><td class="n">'+(s.Q/1000).toFixed(3)+'</td></tr>';
+      });
+      thermalSection += '<h3 style="font-size:11px;color:#0b2a38;margin:16px 0 6px">Index run temperature cascade \u2014 system running</h3>'
+        + '<p>Water flowing along the index path loses heat, so the delivered temperature falls segment by segment. '
+        + 'Each segment is evaluated as T_out = T_amb + (T_in \u2212 T_amb) \u00d7 exp(\u2212UA / (\u1e41\u00b7c\u209a)), which is exact for steady flow with constant ambient. '
+        + 'Segments are taken in schedule order from plant to index terminal. The drop is inversely proportional to flow, so it increases at part load.</p>'
+        + '<table class="rpt"><thead><tr><th>Segment</th><th class="n">Size</th><th class="n">Length m</th><th class="n">Flow l/s</th>'
+        + '<th class="n">T in \u00b0C</th><th class="n">T out \u00b0C</th><th class="n">Drop K</th><th class="n">Loss kW</th></tr></thead><tbody>'
+        + cr + '</tbody></table>'
+        + '<p>Delivered at the index terminal: <strong>'+cas.Tend.toFixed(2)+' \u00b0C</strong>, a total drop of <strong>'+cas.totalDrop.toFixed(3)+' K</strong> from '+cas.Tstart.toFixed(1)+' \u00b0C at the plant.</p>';
+    }
+
+    // --- Dwell decay ---
+    const Ttgt2 = getTargetTemp();
+    const T0d = getFluidTemp(), Tambd = getAmbientTemp();
+    const sysD = systemDecay();
+    const HRS = [1,2,4,6,8,12,18,24];
+    let sysRows = '';
+    [1,2,4,6,8,12,16,20,24].forEach(hh => {
+      const T = decayTemp(T0d, Tambd, sysD.tau_s, hh*3600);
+      sysRows += '<tr'+(T<Ttgt2?' style="color:#c74418"':'')+'><td>'+hh+' h</td><td class="n">'+T.toFixed(2)+'</td>'
+        + '<td class="n">'+(T0d-T).toFixed(2)+'</td><td class="n">'+(sysD.ua*(T-Tambd)/1000).toFixed(2)+'</td></tr>';
+    });
+    const sysTTT = timeToTarget(T0d, Tambd, sysD.tau_s, Ttgt2);
+
+    let perRows = '';
+    circuits.forEach(cc => {
+      const d = circuitDecay(cc);
+      if (!d || d.tau_s <= 0) return;
+      const tt = timeToTarget(T0d, Tambd, d.tau_s, Ttgt2);
+      perRows += '<tr><td>'+escHtml(d.ref)+(d.isIndex?' <span class="tag">INDEX</span>':'')+'</td>'
+        + '<td class="n">'+d.nom+'</td><td class="n">'+d.litres.toFixed(0)+'</td><td class="n">'+(d.tau_s/3600).toFixed(1)+'</td>'
+        + HRS.map(hh => { const T = decayTemp(T0d,Tambd,d.tau_s,hh*3600);
+            return '<td class="n"'+(T<Ttgt2?' style="color:#c74418;font-weight:600"':'')+'>'+T.toFixed(1)+'</td>'; }).join('')
+        + '<td class="n"><strong>'+(tt===null?'\u2014':tt.toFixed(1))+'</strong></td></tr>';
+    });
+
+    thermalSection += '<h3 style="font-size:11px;color:#0b2a38;margin:16px 0 6px">Dwell decay \u2014 system off, no heat input</h3>'
+      + '<p>With no heat input the contents cool exponentially: T = T_amb + (T\u2080 \u2212 T_amb) \u00d7 exp(\u2212t/\u03c4), where \u03c4 = m\u00b7c\u209a/UA. '
+      + 'Figures below the '+Ttgt2.toFixed(0)+' \u00b0C target are shown in red. Treated as one mixed volume ('
+      + sysD.mass.toFixed(0)+' kg, UA '+sysD.ua.toFixed(1)+' W/K) the time constant is <strong>'+(sysD.tau_s/3600).toFixed(1)+' hours</strong>'
+      + ', reaching '+Ttgt2.toFixed(0)+' \u00b0C after <strong>'+(sysTTT===null?'never':sysTTT.toFixed(1)+' hours')+'</strong>.</p>'
+      + '<table class="rpt"><thead><tr><th>Elapsed</th><th class="n">Temp \u00b0C</th><th class="n">Lost K</th><th class="n">Loss kW</th></tr></thead><tbody>'
+      + sysRows + '</tbody></table>'
+      + '<h3 style="font-size:11px;color:#0b2a38;margin:14px 0 6px">Each circuit isolated (valves closed, no circulation)</h3>'
+      + '<table class="rpt"><thead><tr><th>Circuit</th><th class="n">Size</th><th class="n">Litres</th><th class="n">\u03c4 h</th>'
+      + HRS.map(hh => '<th class="n">'+hh+' h</th>').join('')
+      + '<th class="n">To '+Ttgt2.toFixed(0)+'\u00b0C</th></tr></thead><tbody>'
+      + (perRows || '<tr><td colspan="13">No circuits.</td></tr>') + '</tbody></table>'
+      + '<p style="font-size:8.5pt;color:#5a6875">Isolated decay is the conservative case: small-bore branches have far more surface area per litre and cool markedly faster than the mains. '
+      + 'Where the system remains interconnected with the pump off, the mixed-volume figures are more representative.</p>';
+  }
+
   const filledKg = totalPipeKg + totalWaterKg;
   const designKg = filledKg * (1 + upliftPct/100);
   const glyLabel = glyPct===0 ? 'water (LPHW / CHW)' : glyPct+'% propylene glycol';
@@ -2705,6 +3453,7 @@ function exportPDFReport() {
     + pumpSection
     + '<h2>6. System Volume &amp; Weight</h2><p>Total system fluid volume <strong>'+totalWaterL.toFixed(0)+' litres</strong> (for expansion vessel sizing and dosing). Estimated installed pipework weight, incl. '+upliftPct+'% allowance for lagging, cladding and fittings, is <strong>'+designKg.toFixed(0)+' kg</strong> (for structural support assessment).</p>'
     + '<table class="rpt"><tbody><tr><td>Pipe metalwork (dry)</td><td class="n">'+totalPipeKg.toFixed(0)+' kg</td></tr><tr><td>Fluid contents</td><td class="n">'+totalWaterKg.toFixed(0)+' kg ('+totalWaterL.toFixed(0)+' L)</td></tr><tr><td>Filled pipework</td><td class="n">'+filledKg.toFixed(0)+' kg</td></tr><tr class="sub"><td>Design weight (incl. '+upliftPct+'% uplift)</td><td class="n">'+designKg.toFixed(0)+' kg</td></tr></tbody></table>'
+    + thermalSection
     + '<div class="disc"><strong>Disclaimer:</strong> This calculation report is a design aid. Results are based on the inputs provided and standard reference data (BS EN 10255, BS EN 1057, EN 10217-7, CIBSE Guide C). All outputs must be verified by a competent engineer against project-specific requirements, manufacturers\u2019 certified data and applicable standards prior to construction.</div>'
     + '</div></body></html>';
 
@@ -2751,7 +3500,7 @@ function showToast(msg) {
    or open them on another device. Unlike browser storage they are
    never purged and are not tied to one machine.
    ============================================================ */
-const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor"];
+const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor", "insType", "insLambda", "surfaceFinish", "fluidTemp", "ambientTemp", "dwellMins", "flangeFactor", "targetTemp"];
 
 function buildProjectSnapshot() {
   const settings = {};
@@ -2761,6 +3510,8 @@ function buildProjectSnapshot() {
   });
   const llh = document.getElementById('llhEnabled');
   settings.llhEnabled = llh ? llh.checked : false;
+  const th = document.getElementById('thermalEnabled');
+  settings.thermalEnabled = th ? th.checked : false;
   return {
     app: 'adi-pipework-sizer',
     schema: 1,
@@ -2839,6 +3590,11 @@ function handleProjectFile(evt) {
         llh.checked = !!data.settings.llhEnabled;
         if (typeof onLLHChange === 'function') onLLHChange();
       }
+      const th = document.getElementById('thermalEnabled');
+      if (th && data.settings.thermalEnabled !== undefined) {
+        th.checked = !!data.settings.thermalEnabled;
+        if (typeof onThermalToggle === 'function') onThermalToggle();
+      }
     }
     // Restore circuits (backfill any fields added since the file was written)
     circuits = data.circuits.map(cc => Object.assign({
@@ -2871,6 +3627,17 @@ function saveToLocalStorage() {
       projectRef: document.getElementById('projectRef').value,
       engineer: document.getElementById('engineer').value,
       calcDate: document.getElementById('calcDate').value,
+      thermal: {
+        enabled: document.getElementById('thermalEnabled').checked,
+        insType: document.getElementById('insType').value,
+        insLambda: document.getElementById('insLambda').value,
+        surfaceFinish: document.getElementById('surfaceFinish').value,
+        fluidTemp: document.getElementById('fluidTemp').value,
+        ambientTemp: document.getElementById('ambientTemp').value,
+        dwellMins: document.getElementById('dwellMins').value,
+        flangeFactor: document.getElementById('flangeFactor').value,
+        targetTemp: document.getElementById('targetTemp').value,
+      },
     };
     localStorage.setItem('adi_pipesizer_v2', JSON.stringify(state));
   } catch (e) {}
@@ -2896,6 +3663,19 @@ function loadFromLocalStorage() {
     if (s.projectRef) document.getElementById('projectRef').value = s.projectRef;
     if (s.engineer) document.getElementById('engineer').value = s.engineer;
     if (s.calcDate) document.getElementById('calcDate').value = s.calcDate;
+    if (s.thermal) {
+      const t = s.thermal;
+      if (t.enabled !== undefined) document.getElementById('thermalEnabled').checked = !!t.enabled;
+      if (t.insType) document.getElementById('insType').value = t.insType;
+      if (t.insLambda) document.getElementById('insLambda').value = t.insLambda;
+      if (t.surfaceFinish) document.getElementById('surfaceFinish').value = t.surfaceFinish;
+      if (t.fluidTemp) document.getElementById('fluidTemp').value = t.fluidTemp;
+      if (t.ambientTemp) document.getElementById('ambientTemp').value = t.ambientTemp;
+      if (t.dwellMins) document.getElementById('dwellMins').value = t.dwellMins;
+      if (t.flangeFactor) document.getElementById('flangeFactor').value = t.flangeFactor;
+      if (t.targetTemp) document.getElementById('targetTemp').value = t.targetTemp;
+      onThermalToggle();
+    }
     return true;
   } catch (e) { return false; }
 }
