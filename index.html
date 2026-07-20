@@ -1198,9 +1198,9 @@
         <div class="r-unit">kW · consumers only</div>
       </div>
       <div class="total-block">
-        <div class="r-label">Max Circuit Loss</div>
+        <div class="r-label">Index Run Loss</div>
         <div class="r-value" id="t-maxloss">0.0</div>
-        <div class="r-unit">kPa · index run</div>
+        <div class="r-unit">kPa · sum of ticked</div>
       </div>
       <div class="total-block">
         <div class="r-label">Sum Losses</div>
@@ -1262,6 +1262,14 @@
 
     <div id="pumpNoIndex" style="font-size:14px;color:var(--muted);padding:16px 0">
       Tick the <strong style="color:var(--ink)">Index</strong> checkbox on one or more circuits above to calculate the system index pressure and size the pump.
+    </div>
+
+    <div style="background:rgba(122,209,228,0.10);border-left:3px solid var(--brand-blue);border-radius:4px;padding:11px 14px;font-size:12.5px;line-height:1.55;color:var(--ink-soft);margin-bottom:16px">
+      <strong style="color:var(--brand-blue-deep)">Ticking the index run:</strong>
+      tick only the circuits forming <strong>one continuous path</strong> from the plant to the most onerous terminal.
+      Those are in <strong>series</strong>, so their losses add. Where the run <strong>splits into branches</strong> these are in
+      <strong>parallel</strong> — alternative routes, not additive — so follow only the branch leading to your index terminal
+      and leave the other unticked. The lesser branch is balanced back to suit and does not add to pump head.
     </div>
 
     <div id="pumpContent" style="display:none">
@@ -1975,7 +1983,7 @@ function renderCircuits() {
   }
 
   let totalKw = 0, totalLps = 0, totalMdot = 0, totalM3h = 0; let consumerKw = 0;
-  let maxLoss_kPa = 0, sumLoss_kPa = 0;
+  let indexLoss_kPa = 0, sumLoss_kPa = 0;
   let totalPipeKg = 0, totalWaterKg = 0, totalWaterL = 0;
 
   circuits.forEach(c => {
@@ -2012,7 +2020,10 @@ function renderCircuits() {
         velText  = result.recommended.v.toFixed(2);
         pdText   = result.recommended.pd.toFixed(1);
         sumLoss_kPa += result.totalLoss_kPa;
-        if (result.totalLoss_kPa > maxLoss_kPa) maxLoss_kPa = result.totalLoss_kPa;
+        // Index run = the SERIES path the user has ticked (plant → worst terminal).
+        // Sum only the ticked circuits. Parallel branches must not both be ticked —
+        // where the run splits, follow only the branch leading to the index terminal.
+        if (c.isIndex) indexLoss_kPa += result.totalLoss_kPa;
 
         // Build size selector with up/down arrows and actual ID display
         const isOverridden = result.sizeOverride !== 0;
@@ -2144,7 +2155,7 @@ function renderCircuits() {
   document.getElementById('t-sysflow').textContent = sysFlow.toFixed(2);
   document.getElementById('t-syshead').textContent = sysHeadBar.toFixed(2);
   document.getElementById('t-conskw').textContent  = consumerKw.toFixed(1);
-  document.getElementById('t-maxloss').textContent = maxLoss_kPa.toFixed(1);
+  document.getElementById('t-maxloss').textContent = indexLoss_kPa.toFixed(1);
   document.getElementById('t-sumloss').textContent = sumLoss_kPa.toFixed(1);
   document.getElementById('circuitCountHint').textContent = circuits.length + ' circuit' + (circuits.length===1?'':'s');
 
@@ -2353,7 +2364,7 @@ function buildExportRows() {
     const r = calculateCircuit(c);
     if (!r.error) {
       totalKw += r.kw; totalLps += r.vflow_ls; totalM3h += r.vflow_m3h; totalMdot += r.mdot;
-      if (r.totalLoss_kPa > maxLoss) maxLoss = r.totalLoss_kPa;
+      if (c.isIndex) maxLoss += r.totalLoss_kPa;   // index run = sum of ticked (series path)
       sumLoss += r.totalLoss_kPa;
       totalPipeKg  += r.weights.pipe_kg_total;
       totalWaterKg += r.weights.water_kg_total;
@@ -2371,7 +2382,7 @@ function buildExportRows() {
     '','','','','','',
     '', sumLoss.toFixed(2), '', '',
     '','','', totalPipeKg.toFixed(1), totalWaterL.toFixed(1), totalWaterKg.toFixed(1), filledKg.toFixed(1),
-    `+${upliftPct}% uplift = ${designKg.toFixed(0)} kg installed · Max index ${maxLoss.toFixed(2)} kPa`
+    `+${upliftPct}% uplift = ${designKg.toFixed(0)} kg installed · Index run ${maxLoss.toFixed(2)} kPa`
   ];
 
   return { headerMeta, colHeaders, dataRows, totalRow };
