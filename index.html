@@ -776,6 +776,21 @@
 
   .badge-llh { background: rgba(240,165,0,0.15); color: #b37800; border: 1px solid rgba(240,165,0,0.4); }
   /* ========================================================
+     ACCIDENTAL-EDIT GUARD — number fields are type-only
+     Removes the tiny spinner arrows so a stray click cannot
+     nudge a figure. Works alongside the wheel/arrow-key guard.
+     ======================================================== */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  /* ========================================================
      iPHONE / PWA — home-screen app polish
      ======================================================== */
 
@@ -953,12 +968,15 @@
     </div>
     <div class="field" style="margin:0; max-width:150px">
       <label>Date</label>
-      <input type="text" id="calcDate" readonly>
+      <input type="date" id="calcDate" onchange="saveToLocalStorage()">
     </div>
     <div class="toolbar">
       <button class="btn" id="exportCsvBtn">Export CSV</button>
       <button class="btn btn-primary" id="exportXlsxBtn">Export Excel</button>
       <button class="btn btn-primary" id="exportPdfBtn" style="background:var(--brand-blue-deep);color:var(--white)">PDF Report</button>
+      <button class="btn" id="saveProjectBtn" title="Download this project as a file you can archive or re-open later">Save Project</button>
+      <button class="btn" id="openProjectBtn" title="Open a previously saved project file">Open Project</button>
+      <input type="file" id="projectFileInput" accept=".json,application/json" style="display:none">
     </div>
   </div>
 
@@ -2251,7 +2269,7 @@ function onGlycolChange() {
 function buildExportRows() {
   const project = document.getElementById('projectRef').value || '';
   const engineer = document.getElementById('engineer').value || '';
-  const date = document.getElementById('calcDate').value;
+  const date = formatDateGB(document.getElementById('calcDate').value);
   const glyPct = document.getElementById('glycol').value;
   const rho = document.getElementById('rho').value;
   const cp = document.getElementById('cp').value;
@@ -2491,7 +2509,7 @@ function escHtml(s) {
 function exportPDFReport() {
   const project  = document.getElementById('projectRef').value || 'Untitled Project';
   const engineer = document.getElementById('engineer').value || '\u2014';
-  const date     = document.getElementById('calcDate').value;
+  const date     = formatDateGB(document.getElementById('calcDate').value);
   const glyPct   = parseInt(document.getElementById('glycol').value) || 0;
   const rho      = parseFloat(document.getElementById('rho').value) || 999;
   const cp       = parseFloat(document.getElementById('cp').value) || 4.182;
@@ -2716,6 +2734,119 @@ function showToast(msg) {
 }
 
 /* ============ PERSISTENCE ============ */
+/* ============================================================
+   PROJECT FILES — save a full snapshot to disk, re-open later
+   Files are portable: archive them in the job folder, email them,
+   or open them on another device. Unlike browser storage they are
+   never purged and are not tied to one machine.
+   ============================================================ */
+const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor"];
+
+function buildProjectSnapshot() {
+  const settings = {};
+  PROJECT_SETTING_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) settings[id] = el.value;
+  });
+  const llh = document.getElementById('llhEnabled');
+  settings.llhEnabled = llh ? llh.checked : false;
+  return {
+    app: 'adi-pipework-sizer',
+    schema: 1,
+    savedAt: new Date().toISOString(),
+    circuits: circuits,
+    nextId: nextId,
+    settings: settings,
+  };
+}
+
+function projectFileName() {
+  const ref = (document.getElementById('projectRef').value || 'Pipework-Sizing')
+                .replace(/[^a-z0-9-_ ]+/gi, '').trim().replace(/\s+/g, '_') || 'Pipework-Sizing';
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
+              + '_' + pad(d.getHours()) + pad(d.getMinutes());
+  return ref + '_' + stamp + '.json';
+}
+
+function saveProjectFile() {
+  try {
+    const name = projectFileName();
+    const blob = new Blob([JSON.stringify(buildProjectSnapshot(), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    showToast('Saved ' + name);
+  } catch (e) {
+    alert('Could not save the project file: ' + e.message);
+  }
+}
+
+function openProjectFile() {
+  document.getElementById('projectFileInput').click();
+}
+
+function handleProjectFile(evt) {
+  const file = evt.target.files && evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    let data;
+    try {
+      data = JSON.parse(e.target.result);
+    } catch (err) {
+      alert('That file could not be read \u2014 it does not look like a saved project (invalid JSON).');
+      evt.target.value = '';
+      return;
+    }
+    if (!data || data.app !== 'adi-pipework-sizer' || !Array.isArray(data.circuits)) {
+      alert('That file is not an adi Pipework Sizer project file.');
+      evt.target.value = '';
+      return;
+    }
+    const savedOn = data.savedAt ? new Date(data.savedAt).toLocaleString('en-GB') : 'unknown date';
+    const ref = (data.settings && data.settings.projectRef) || '(no reference)';
+    if (circuits.length > 0 &&
+        !confirm('Open "' + ref + '" (' + data.circuits.length + ' circuits, saved ' + savedOn + ')?\n\n'
+                 + 'This will REPLACE the ' + circuits.length + ' circuit(s) currently on screen.\n'
+                 + 'Save the current project first if you need to keep it.')) {
+      evt.target.value = '';
+      return;
+    }
+    // Restore settings
+    if (data.settings) {
+      PROJECT_SETTING_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && data.settings[id] !== undefined) el.value = data.settings[id];
+      });
+      const llh = document.getElementById('llhEnabled');
+      if (llh && data.settings.llhEnabled !== undefined) {
+        llh.checked = !!data.settings.llhEnabled;
+        if (typeof onLLHChange === 'function') onLLHChange();
+      }
+    }
+    // Restore circuits (backfill any fields added since the file was written)
+    circuits = data.circuits.map(cc => Object.assign({
+      length: 20, fittings: 20, isIndex: false, consumerLoad: 0, isLLH: false, sizeOverride: 0,
+    }, cc));
+    nextId = data.nextId || (circuits.length + 1);
+    if (typeof onGlycolChange === 'function') onGlycolChange();
+    renderCircuits();
+    saveToLocalStorage();
+    showToast('Opened ' + ref + ' \u2014 ' + circuits.length + ' circuits');
+    evt.target.value = '';   // allow re-opening the same file
+  };
+  reader.onerror = function () {
+    alert('Could not read that file.');
+    evt.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
 function saveToLocalStorage() {
   try {
     const state = {
@@ -2728,6 +2859,7 @@ function saveToLocalStorage() {
       vMax: document.getElementById('vMax').value,
       projectRef: document.getElementById('projectRef').value,
       engineer: document.getElementById('engineer').value,
+      calcDate: document.getElementById('calcDate').value,
     };
     localStorage.setItem('adi_pipesizer_v2', JSON.stringify(state));
   } catch (e) {}
@@ -2752,12 +2884,29 @@ function loadFromLocalStorage() {
     if (s.vMax) document.getElementById('vMax').value = s.vMax;
     if (s.projectRef) document.getElementById('projectRef').value = s.projectRef;
     if (s.engineer) document.getElementById('engineer').value = s.engineer;
+    if (s.calcDate) document.getElementById('calcDate').value = s.calcDate;
     return true;
   } catch (e) { return false; }
 }
 
 /* ============ INIT ============ */
-document.getElementById('calcDate').value = new Date().toLocaleDateString('en-GB');
+// Default to today ONLY if no date has been set/restored — never overwrite the user's own date
+(function initCalcDate() {
+  const el = document.getElementById('calcDate');
+  if (!el.value) {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    el.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); // yyyy-mm-dd for <input type=date>
+  }
+})();
+
+// Format a yyyy-mm-dd value as dd/mm/yyyy for reports and exports (British English)
+function formatDateGB(iso) {
+  if (!iso) return '\u2014';
+  const parts = String(iso).split('-');
+  if (parts.length !== 3) return iso;   // already formatted or free text
+  return parts[2] + '/' + parts[1] + '/' + parts[0];
+}
 
 ['rho','cp','limitPd','vMin','vMax','defaultMaterial','projectRef','engineer'].forEach(id => {
   document.getElementById(id).addEventListener('input', renderCircuits);
@@ -2774,6 +2923,34 @@ document.getElementById('addRowBtn2').addEventListener('click', () => addCircuit
 document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
 document.getElementById('exportXlsxBtn').addEventListener('click', exportXLSX);
 document.getElementById('exportPdfBtn').addEventListener('click', exportPDFReport);
+document.getElementById('saveProjectBtn').addEventListener('click', saveProjectFile);
+document.getElementById('openProjectBtn').addEventListener('click', openProjectFile);
+document.getElementById('projectFileInput').addEventListener('change', handleProjectFile);
+
+/* ============================================================
+   ACCIDENTAL-EDIT GUARD
+   Browsers treat a mouse-wheel scroll over a focused <input type="number">
+   as an increment/decrement, silently corrupting figures while the user is
+   only trying to scroll the page. Blurring the field on wheel stops the
+   value changing while leaving normal page scrolling untouched.
+   Values must be typed.
+   ============================================================ */
+document.addEventListener('wheel', function (e) {
+  const el = document.activeElement;
+  if (el && el.tagName === 'INPUT' && el.type === 'number' && el === e.target) {
+    el.blur();   // page keeps scrolling; the number stays put
+  }
+}, { passive: true });
+
+/* Arrow keys also nudge number inputs — block Up/Down so entry is typed only.
+   (Tab, digits, decimal point, minus, backspace etc. all behave normally.) */
+document.addEventListener('keydown', function (e) {
+  const el = e.target;
+  if (el && el.tagName === 'INPUT' && el.type === 'number' &&
+      (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault();
+  }
+});
 
 // Load saved state or seed with a sample row
 if (!loadFromLocalStorage() || circuits.length === 0) {
