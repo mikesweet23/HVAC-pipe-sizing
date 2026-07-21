@@ -1004,7 +1004,24 @@
   <!-- Global Fluid Setup -->
   <div class="top-grid">
     <div class="card">
-      <div class="card-title">System Fluid Setup <span class="hint">applies to all circuits</span></div>
+      <div class="card-title">Design Basis &amp; Fluid <span class="hint">project defaults · circuits may override</span></div>
+
+      <div class="row3" style="margin-bottom:16px">
+        <div class="field">
+          <label>Design Supply <span class="unit">°C</span></label>
+          <input type="number" id="fluidTemp" value="80" step="5" oninput="onBasisChange()">
+        </div>
+        <div class="field">
+          <label>Design Return <span class="unit">°C</span></label>
+          <input type="number" id="returnTemp" value="60" step="5" oninput="onBasisChange()">
+        </div>
+        <div class="field">
+          <label>Ambient <span class="unit">°C</span></label>
+          <input type="number" id="ambientTemp" value="20" step="1" oninput="onBasisChange()">
+        </div>
+      </div>
+
+      <div id="basisSummary" style="background:rgba(122,209,228,0.12);border-left:3px solid var(--brand-blue);padding:10px 13px;margin-bottom:16px;font-size:12.5px;line-height:1.55"></div>
 
       <div class="glycol-block">
         <div class="glycol-header">
@@ -1033,14 +1050,20 @@
         </div>
       </div>
 
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:14px 0 10px">
+        <input type="checkbox" id="autoProps" checked onchange="onBasisChange()"
+               style="width:18px;height:18px;accent-color:var(--brand-blue);cursor:pointer;flex-shrink:0">
+        <span style="font-size:13.5px;font-weight:600">Derive ρ and cₚ from mean operating temperature</span>
+      </label>
+
       <div class="row2">
         <div class="field">
-          <label>Density ρ <span class="unit">kg/m³</span></label>
-          <input type="number" id="rho" value="999" step="1">
+          <label>Density ρ <span class="unit">kg/m³</span> <span id="rhoTag" style="font-size:9px;background:var(--brand-blue);color:var(--black);padding:1px 5px;border-radius:2px;font-weight:700;letter-spacing:0.5px">CALC</span></label>
+          <input type="number" id="rho" value="999" step="1" oninput="renderCircuits()">
         </div>
         <div class="field">
-          <label>Specific Heat cₚ <span class="unit">kJ/kg·K</span></label>
-          <input type="number" id="cp" value="4.182" step="0.001">
+          <label>Specific Heat cₚ <span class="unit">kJ/kg·K</span> <span id="cpTag" style="font-size:9px;background:var(--brand-blue);color:var(--black);padding:1px 5px;border-radius:2px;font-weight:700;letter-spacing:0.5px">CALC</span></label>
+          <input type="number" id="cp" value="4.182" step="0.001" oninput="renderCircuits()">
         </div>
       </div>
     </div>
@@ -1144,6 +1167,32 @@
 
   <!-- Circuits Table -->
   <div class="card circuits-card">
+    <div id="topologyPanel" style="background:var(--off-white);border:1px solid var(--line-strong);border-radius:5px;padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink)">System Topology</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <label style="font-size:11.5px;color:var(--muted)">Tolerance
+            <input type="number" id="rollupTol" value="0.25" step="0.25" min="0" style="width:56px;padding:5px 6px;font-size:12px;margin-left:5px" oninput="renderCircuits()"> %
+          </label>
+          <button onclick="autoAssignParents()" style="background:var(--white);color:var(--ink);border:1px solid var(--line-strong);border-radius:5px;padding:8px 12px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12px;min-height:38px">Assign parents from order</button>
+          <button onclick="applyCriticalPath()" style="background:var(--brand-blue-deep);color:var(--white);border:none;border-radius:5px;padding:8px 12px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12px;min-height:38px">Find critical path</button>
+        </div>
+      </div>
+      <div id="topologySummary" style="font-size:12.5px;line-height:1.6"></div>
+    </div>
+
+    <div id="lengthPrompt" style="display:none;background:#fff8e6;border:1px solid #e0b95c;border-left:4px solid #c28a00;border-radius:4px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.6">
+      <strong style="color:#8a6100;font-size:13.5px">Confirm what your existing lengths represent</strong>
+      <div style="margin:6px 0 10px;color:var(--ink-soft)">
+        Flow and return legs are now stored separately. Your saved lengths have been imported as the
+        <strong>flow leg only, with no return leg</strong>, so no result has changed. Tell the tool what they meant:
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="confirmLengthsOneWay()" style="background:var(--brand-blue-deep);color:var(--white);border:none;border-radius:5px;padding:9px 14px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px;min-height:40px">One-way route — add equal return legs</button>
+        <button onclick="confirmLengthsTotal()" style="background:var(--white);color:var(--ink);border:1px solid var(--line-strong);border-radius:5px;padding:9px 14px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px;min-height:40px">Already flow + return — split evenly</button>
+        <button onclick="dismissLengthPrompt()" style="background:transparent;color:var(--muted);border:none;padding:9px 12px;cursor:pointer;font-family:inherit;font-size:12.5px;min-height:40px">Decide later</button>
+      </div>
+    </div>
     <div class="card-title">
       <span>Circuits <span class="hint" id="circuitCountHint" style="margin-left:8px">0 circuits</span></span>
       <span style="display:flex;gap:8px">
@@ -1166,7 +1215,7 @@
             <th title="Only active in 'Size from kW' mode — enter heat load in kW">Input A<br><span style="font-weight:400;color:var(--brand-blue);font-size:11px">(kW)</span></th>
             <th title="ΔT in both modes">ΔT (K)</th>
             <th title="Only active in 'Size from l/s' mode — enter flow rate in l/s">Input B<br><span style="font-weight:400;color:var(--brand-blue);font-size:11px">(l/s)</span></th>
-            <th title="Straight pipe run length in metres">Length (m)</th>
+            <th title="What this circuit is. A main carries flow onward; a consumer actually uses the heat.">Type</th><th title="The circuit feeding this one. Blank means fed directly from plant.">Fed from</th><th title="Physical one-way flow pipe length">Flow (m)</th><th title="Physical one-way return pipe length. Locked to the flow leg in paired mode.">Return (m)</th>
             <th title="Fitting equivalent length as % of straight run">Fittings %</th>
             <th title="Pressure drop across connected equipment (AHU, coil, valve, etc.) in kPa">Consumer<br><span style="font-weight:400;color:var(--brand-blue);font-size:11px">load (kPa)</span></th>
 
@@ -1319,12 +1368,16 @@
           </select>
         </div>
         <div class="input-group">
-          <label>Fluid Temperature <span class="unit">°C</span></label>
-          <input type="number" id="fluidTemp" value="80" step="5" oninput="renderCircuits()">
+          <label>Shutdown Scenario</label>
+          <select id="shutdownScenario" onchange="renderCircuits()">
+            <option value="normal" selected>Normal operating shutdown (mixed)</option>
+            <option value="preheated">Fully preheated (all at supply temp)</option>
+            <option value="custom">Custom starting temperature</option>
+          </select>
         </div>
         <div class="input-group">
-          <label>Ambient Temperature <span class="unit">°C</span></label>
-          <input type="number" id="ambientTemp" value="20" step="1" oninput="renderCircuits()">
+          <label>Custom Start <span class="unit">°C · custom only</span></label>
+          <input type="number" id="customStartTemp" value="" step="5" placeholder="—" oninput="renderCircuits()">
         </div>
         <div class="input-group">
           <label>Dwell Period <span class="unit">minutes</span></label>
@@ -1878,8 +1931,14 @@ function newCircuit(overrides = {}) {
     sizeOverride: overrides.sizeOverride ?? 0, // step offset from auto-recommendation
     insThickness: overrides.insThickness ?? '',   // '' = use the schedule for this OD
     finish: overrides.finish ?? 'project',        // 'project' = use the project default
-    valveCount: overrides.valveCount ?? 0,
-    flangeCount: overrides.flangeCount ?? 0,
+    lengthReturn: overrides.lengthReturn ?? '',   // '' = mirror the flow leg (paired mode)
+    lengthsPaired: overrides.lengthsPaired ?? true,
+    circuitType: overrides.circuitType ?? 'main',  // main | consumer | future | plant
+    parentId: overrides.parentId ?? null,          // null = fed directly from plant
+    valveCount: overrides.valveCount ?? 6,        // AUTO default per project spec
+    valveAuto: overrides.valveAuto ?? true,
+    flangeCount: overrides.flangeCount ?? null,   // null = auto from installed length
+    flangeAuto: overrides.flangeAuto ?? true,
   };
 }
 
@@ -2148,6 +2207,8 @@ function getFlangeFactor(){ const v = parseFloat(document.getElementById('flange
    three views can never disagree.                                    */
 function circuitUA(c, result) {
   const out = { ua: 0, uaPipe: 0, uaValve: 0, uaFlange: 0,
+                uaPipeFlow: 0, uaPipeReturn: 0, uaFittingsFlow: 0, uaFittingsReturn: 0,
+                lengthFlow: 0, lengthReturn: 0, nValves: 0, nFlanges: 0,
                 thickness_mm: 0, lambda: 0, h_se: 0, rPerM: 0,
                 dn: 0, valveEstimated: false };
   if (!result || result.error || !result.recommended) return out;
@@ -2172,11 +2233,11 @@ function circuitUA(c, result) {
   if (thk > 0 && lambda > 0) R += Math.log(Do / Di) / (2 * Math.PI * lambda);
   R += 1 / (Math.PI * Do * h_se);
 
-  const length = parseFloat(c.length) || 0;
+  const Lf = lengthFlow(c), Lr = lengthReturn(c);
   const dn = nominalDNFor(result.recommended.nom, result.recommended.id_mm);
   const vj = valveJacketWK(dn);
-  const nValves  = parseFloat(c.valveCount)  || 0;
-  const nFlanges = parseFloat(c.flangeCount) || 0;
+  const nValves  = effectiveValveCount(c);
+  const nFlanges = effectiveFlangeCount(c);
 
   out.rPerM        = R;
   out.thickness_mm = thk;
@@ -2184,25 +2245,52 @@ function circuitUA(c, result) {
   out.h_se         = h_se;
   out.dn           = dn;
   out.valveEstimated = vj.estimated;
-  out.uaPipe   = R > 0 ? length / R : 0;
+  // Separate conductance for each leg so they can be evaluated at their own temperature
+  out.uaPipeFlow   = R > 0 ? Lf / R : 0;
+  out.uaPipeReturn = R > 0 ? Lr / R : 0;
+  out.uaPipe   = out.uaPipeFlow + out.uaPipeReturn;
+  // Valves and flanges split equally between the legs unless told otherwise
   out.uaValve  = nValves * vj.wk;
   out.uaFlange = nFlanges * vj.wk * getFlangeFactor();
+  out.uaFittingsFlow   = (out.uaValve + out.uaFlange) / 2;
+  out.uaFittingsReturn = (out.uaValve + out.uaFlange) / 2;
   out.ua = out.uaPipe + out.uaValve + out.uaFlange;
+  out.lengthFlow = Lf; out.lengthReturn = Lr;
+  out.nValves = nValves; out.nFlanges = nFlanges;
   return out;
 }
 
 /* ---- Heat loss at a given deltaT (all terms linear in deltaT) ---- */
 function circuitHeatLoss(c, result, deltaT) {
   const u = circuitUA(c, result);
-  const dT = (deltaT === undefined) ? (getFluidTemp() - getAmbientTemp()) : deltaT;
+  const Ta = getAmbientTemp();
+  // Each leg sits at its own temperature. If an explicit deltaT is passed
+  // (the 5 K increment table), it is applied uniformly instead.
+  const uniform = (deltaT !== undefined);
+  const dTflow   = uniform ? deltaT : (getSupplyTemp() - Ta);
+  const dTreturn = uniform ? deltaT : (getReturnTemp() - Ta);
+
+  const pipeFlowW   = u.uaPipeFlow   * dTflow;
+  const pipeReturnW = u.uaPipeReturn * dTreturn;
+  const fitFlowW    = u.uaFittingsFlow   * dTflow;
+  const fitReturnW  = u.uaFittingsReturn * dTreturn;
+  const fitTotal    = fitFlowW + fitReturnW;
+  const valveShare  = (u.uaValve + u.uaFlange) > 0 ? u.uaValve  / (u.uaValve + u.uaFlange) : 0;
+  const flangeShare = (u.uaValve + u.uaFlange) > 0 ? u.uaFlange / (u.uaValve + u.uaFlange) : 0;
+
   return {
     thickness_mm: u.thickness_mm, lambda: u.lambda, h_se: u.h_se,
     dn: u.dn, valveEstimated: u.valveEstimated, ua: u.ua,
-    wPerM:   u.rPerM > 0 ? dT / u.rPerM : 0,
-    pipeW:   u.uaPipe   * dT,
-    valveW:  u.uaValve  * dT,
-    flangeW: u.uaFlange * dT,
-    totalW:  u.ua       * dT,
+    lengthFlow: u.lengthFlow, lengthReturn: u.lengthReturn,
+    nValves: u.nValves, nFlanges: u.nFlanges,
+    wPerMflow:   u.rPerM > 0 ? dTflow   / u.rPerM : 0,
+    wPerMreturn: u.rPerM > 0 ? dTreturn / u.rPerM : 0,
+    wPerM:       u.rPerM > 0 ? dTflow   / u.rPerM : 0,   // legacy alias (flow leg)
+    pipeFlowW, pipeReturnW,
+    pipeW:   pipeFlowW + pipeReturnW,
+    valveW:  fitTotal * valveShare,
+    flangeW: fitTotal * flangeShare,
+    totalW:  pipeFlowW + pipeReturnW + fitTotal,
   };
 }
 
@@ -2224,15 +2312,17 @@ function indexCascade(turndownPct) {
     const r = calculateCircuit(c);
     if (r.error || !r.recommended) return;
     const u = circuitUA(c, r);
+    // Supply cascade sees the flow leg and its share of fittings only.
+    const uaLeg = u.uaPipeFlow + u.uaFittingsFlow;
     const mdot = (r.mdot || 0) * scale;
     const Tin = T;
     let Tout = Tin;
-    if (mdot > 0 && u.ua > 0) {
-      Tout = Tamb + (Tin - Tamb) * Math.exp(-u.ua / (mdot * cp));
+    if (mdot > 0 && uaLeg > 0) {
+      Tout = Tamb + (Tin - Tamb) * Math.exp(-uaLeg / (mdot * cp));
     }
     const Q = mdot * cp * (Tin - Tout);
-    segs.push({ ref: c.ref, nom: r.recommended.nom, length: parseFloat(c.length) || 0,
-                lps: (r.vflow_ls || 0) * scale, ua: u.ua, Tin, Tout,
+    segs.push({ ref: c.ref, nom: r.recommended.nom, length: lengthFlow(c),
+                lps: (r.vflow_ls || 0) * scale, ua: uaLeg, Tin, Tout,
                 drop: Tin - Tout, Q, hasConsumer: (parseFloat(c.consumerLoad) || 0) > 0 });
     T = Tout;
   });
@@ -2241,6 +2331,60 @@ function indexCascade(turndownPct) {
 
 /* ---- DWELL: exponential decay, exact at any duration ----
    T(t) = T_amb + (T0 - T_amb) * exp(-t / tau),  tau = m*cp / UA        */
+/* ---- Shutdown starting conditions ----
+   Normal operating shutdown: the flow leg sits at supply temperature and the
+   return leg at return temperature, so when the contents mix the system starts
+   from a volume-weighted mean — for equal leg lengths at 80/60 C that is 70 C,
+   not 80 C. Fully preheated only applies where the system has been circulated
+   hot with the loads off.                                                      */
+function getShutdownScenario() {
+  const el = document.getElementById('shutdownScenario');
+  return el ? el.value : 'normal';
+}
+
+function mixedStartTemp() {
+  const Ts = getSupplyTemp(), Tr = getReturnTemp();
+  let vFlow = 0, vReturn = 0;
+  circuits.forEach(c => {
+    const r = calculateCircuit(c);
+    if (r.error || !r.recommended) return;
+    const perM = r.weights.water_l_per_m;
+    vFlow   += perM * lengthFlow(c);
+    vReturn += perM * lengthReturn(c);
+  });
+  const tot = vFlow + vReturn;
+  if (tot <= 0) return Ts;
+  return (vFlow * Ts + vReturn * Tr) / tot;
+}
+
+function shutdownStartTemp() {
+  switch (getShutdownScenario()) {
+    case 'preheated': return getSupplyTemp();
+    case 'custom': {
+      const v = parseFloat((document.getElementById('customStartTemp')||{}).value);
+      return isNaN(v) ? mixedStartTemp() : v;
+    }
+    default: return mixedStartTemp();
+  }
+}
+
+function shutdownScenarioNote() {
+  const Ts = getSupplyTemp(), Tr = getReturnTemp(), T0 = shutdownStartTemp();
+  switch (getShutdownScenario()) {
+    case 'preheated':
+      return 'All contents assumed at the ' + Ts.toFixed(0) + ' \u00b0C supply temperature. '
+           + 'Only valid where the system has been circulated hot with the loads off \u2014 otherwise it overstates stored heat.';
+    case 'custom':
+      return 'User-entered starting temperature of ' + T0.toFixed(1) + ' \u00b0C applied to all contents.';
+    default:
+      return 'Flow leg at ' + Ts.toFixed(0) + ' \u00b0C and return leg at ' + Tr.toFixed(0) + ' \u00b0C mix on shutdown to a '
+           + 'volume-weighted <strong>' + T0.toFixed(1) + ' \u00b0C</strong>. Perfect mixing is a modelling assumption \u2014 '
+           + 'a stopped, interconnected system may stratify or continue weak natural circulation instead.';
+  }
+}
+
+function getShutdownScenario_unused() {}
+
 function decayTemp(T0, Tamb, tau_s, t_s) {
   if (tau_s <= 0) return Tamb;
   return Tamb + (T0 - Tamb) * Math.exp(-t_s / tau_s);
@@ -2317,6 +2461,395 @@ function onThermalToggle() {
     document.getElementById('thermalEnabled').checked ? 'block' : 'none';
 }
 
+/* ============================================================
+   DESIGN BASIS  —  supply / return / mean temperatures and
+   temperature-dependent fluid properties.
+
+   Water density and specific heat are polynomial fits to standard
+   tables over 0-130 C, accurate to better than 0.05% — well inside
+   the uncertainty of anything else in this calculation, so a full
+   IAPWS IF97 implementation is not warranted.
+
+   Glycol scales these by the existing concentration factors.
+   ============================================================ */
+/* ---- Pipe length model ----
+   Flow and return legs are stored separately. In paired mode the return
+   leg mirrors the flow leg; unlock a circuit to enter them independently.
+     Hydraulic loss, volume and weight  -> flow + return
+     Supply temperature cascade         -> flow leg only
+     Return temperature cascade         -> return leg only                */
+/* ---- Migration: legacy single-length circuits ----
+   A circuit saved before the flow/return split has no lengthsPaired flag.
+   Import it with the return leg set to zero so no result changes, then ask
+   the user what the stored length represented. Never silently double or halve. */
+let lengthsNeedConfirming = false;
+let typesNeedConfirming = false;
+
+function toggleLengthPair(id) {
+  const c = circuits.find(x => x.id === id);
+  if (!c) return;
+  if (c.lengthsPaired !== false) { c.lengthsPaired = false; c.lengthReturn = lengthFlow(c); }
+  else { c.lengthsPaired = true; c.lengthReturn = ''; }
+  renderCircuits();
+}
+function markValveOverride(id)  { const c = circuits.find(x => x.id === id); if (c) { c.valveAuto = false;  renderCircuits(); } }
+function markFlangeOverride(id) { const c = circuits.find(x => x.id === id); if (c) { c.flangeAuto = false; renderCircuits(); } }
+/* ============================================================
+   TOPOLOGY
+   Each circuit has an explicit type and an optional parent. A main
+   carries flow to its children; a consumer is a terminal that
+   actually uses the heat. A main may feed several consumers, and a
+   consumer may itself sit on a branch that feeds others — the type
+   says what the circuit IS, the parent says what feeds it.
+   ============================================================ */
+const CIRCUIT_TYPES = {
+  main:     { label: 'Distribution main', short: 'MAIN',     colour: '#1a5670' },
+  consumer: { label: 'Consumer / terminal', short: 'CONSUMER', colour: '#0b7a4b' },
+  future:   { label: 'Future connection', short: 'FUTURE',   colour: '#c28a00' },
+  plant:    { label: 'Plant connection',  short: 'PLANT',    colour: '#5a3d8a' },
+};
+
+function circuitType(c) { return c.circuitType || 'main'; }
+function isConsumer(c)  { return circuitType(c) === 'consumer'; }
+function isFuture(c)    { return circuitType(c) === 'future'; }
+
+function circuitById(id) { return circuits.find(x => x.id === id) || null; }
+function childrenOf(id)  { return circuits.filter(x => x.parentId === id); }
+function rootCircuits()  { return circuits.filter(x => x.parentId === null || x.parentId === undefined || !circuitById(x.parentId)); }
+
+// Walk from a circuit up to the plant. Returns [circuit, parent, ... root].
+// Guards against a malformed tree looping back on itself.
+function pathToPlant(c) {
+  const path = [];
+  const seen = new Set();
+  let node = c;
+  while (node && !seen.has(node.id)) {
+    seen.add(node.id);
+    path.push(node);
+    node = (node.parentId === null || node.parentId === undefined) ? null : circuitById(node.parentId);
+  }
+  return path;
+}
+
+// Depth for the indented tree display
+function circuitDepth(c) {
+  let d = 0, node = c, seen = new Set();
+  while (node && node.parentId !== null && node.parentId !== undefined && !seen.has(node.id)) {
+    seen.add(node.id);
+    node = circuitById(node.parentId);
+    if (node) d++;
+  }
+  return d;
+}
+
+// Would setting `parentId` on `childId` create a cycle?
+function wouldCycle(childId, parentId) {
+  if (childId === parentId) return true;
+  let node = circuitById(parentId), seen = new Set();
+  while (node && !seen.has(node.id)) {
+    if (node.id === childId) return true;
+    seen.add(node.id);
+    node = (node.parentId === null || node.parentId === undefined) ? null : circuitById(node.parentId);
+  }
+  return false;
+}
+
+function setCircuitParent(id, parentVal) {
+  const c = circuitById(id);
+  if (!c) return;
+  const pid = (parentVal === '' || parentVal === 'null') ? null : parseInt(parentVal, 10);
+  if (pid !== null && wouldCycle(id, pid)) {
+    showToast('That would create a loop \u2014 parent not changed');
+    renderCircuits();
+    return;
+  }
+  c.parentId = pid;
+  renderCircuits();
+}
+
+/* ---- Automatic parent assignment from list order ----
+   Walks the list top to bottom. Each circuit is attached to the nearest
+   preceding distribution main that is not itself. Only a starting point —
+   the user corrects it from the dropdowns afterwards. */
+function autoAssignParents() {
+  let lastMainAtDepth = null;
+  circuits.forEach((c, i) => {
+    if (i === 0) { c.parentId = null; lastMainAtDepth = c; return; }
+    // nearest preceding main
+    let parent = null;
+    for (let j = i - 1; j >= 0; j--) {
+      if (circuitType(circuits[j]) === 'main' || circuitType(circuits[j]) === 'plant') { parent = circuits[j]; break; }
+    }
+    c.parentId = (parent && !wouldCycle(c.id, parent.id)) ? parent.id : null;
+  });
+  renderCircuits();
+  showToast('Parents assigned from list order \u2014 review and correct');
+}
+
+/* ---- Flow roll-up check ----
+   A distribution main should carry the sum of its children's duty. Compare
+   and flag any mismatch beyond tolerance — this is what catches a schedule
+   where an intermediate main has been mistyped. */
+function getRollupTolerance() {
+  const v = parseFloat((document.getElementById('rollupTol')||{}).value);
+  return isNaN(v) ? 0.25 : Math.max(0, v);
+}
+
+function rollupCheck() {
+  const issues = [];
+  const tol = getRollupTolerance();
+  circuits.forEach(c => {
+    const kids = childrenOf(c.id);
+    if (kids.length === 0) return;                      // terminal, nothing to roll up
+    if (circuitType(c) === 'consumer') return;          // a consumer feeding others is its own load
+    const own = calculateCircuit(c);
+    if (own.error) return;
+    let sum = 0, ok = true;
+    kids.forEach(k => {
+      const r = calculateCircuit(k);
+      if (r.error) { ok = false; return; }
+      sum += r.kw;
+    });
+    if (!ok || own.kw <= 0) return;
+    const diff = own.kw - sum;
+    const pct = Math.abs(diff) / own.kw * 100;
+    if (pct > tol) {
+      issues.push({ ref: c.ref, id: c.id, own: own.kw, sum, diff, pct,
+                    severity: pct > 1 ? 'ERROR' : 'WARNING',
+                    children: kids.map(k => k.ref) });
+    }
+  });
+  return issues;
+}
+
+/* ---- Automatic critical path ----
+   Evaluate every terminal (consumer or future) by walking up to the plant
+   and summing the pressure loss of each segment on the way. The highest is
+   the index run. Replaces relying on the user to tick the right boxes. */
+function evaluatePaths() {
+  const terminals = circuits.filter(c => isConsumer(c) || isFuture(c) || childrenOf(c.id).length === 0);
+  const paths = [];
+  terminals.forEach(t => {
+    const chain = pathToPlant(t);
+    let total = 0, ok = true;
+    chain.forEach(seg => {
+      const r = calculateCircuit(seg);
+      if (r.error || !r.recommended) { ok = false; return; }
+      total += r.totalLoss_kPa;
+    });
+    if (!ok) return;
+    paths.push({ terminal: t.ref, id: t.id, kPa: total,
+                 segments: chain.map(s => s.ref).reverse(), depth: chain.length });
+  });
+  paths.sort((a, b) => b.kPa - a.kPa);
+  return paths;
+}
+
+// Tick the index boxes to match the automatically determined critical path
+function applyCriticalPath() {
+  const paths = evaluatePaths();
+  if (paths.length === 0) { showToast('No complete path found'); return; }
+  const best = circuitById(paths[0].id);
+  const chain = new Set(pathToPlant(best).map(s => s.id));
+  circuits.forEach(c => { c.isIndex = chain.has(c.id); });
+  renderCircuits();
+  showToast('Index run set to ' + paths[0].terminal + ' (' + paths[0].kPa.toFixed(1) + ' kPa)');
+}
+
+function migrateLengths(list) {
+  let legacy = 0, typesInferred = 0;
+  list.forEach(c => {
+    if (c.lengthsPaired === undefined) {
+      c.lengthsPaired = false;   // do not mirror yet
+      c.lengthReturn  = 0;       // nothing added until confirmed
+      legacy++;
+    }
+    if (c.circuitType === undefined) {
+      // Legacy convention: a consumer pressure loss marked a terminal.
+      // Migrate it to an explicit type, then ask the user to confirm.
+      c.circuitType = ((parseFloat(c.consumerLoad) || 0) > 0) ? 'consumer' : 'main';
+      typesInferred++;
+    }
+    if (c.parentId === undefined) c.parentId = null;
+    if (c.valveAuto === undefined)  c.valveAuto  = false;  // existing counts are user values
+    if (c.flangeAuto === undefined) c.flangeAuto = false;
+    if (c.flangeCount === undefined || c.flangeCount === null) { c.flangeCount = 0; c.flangeAuto = false; }
+  });
+  if (legacy > 0) lengthsNeedConfirming = true;
+  if (typesInferred > 0) typesNeedConfirming = true;
+  return list;
+}
+
+// User confirms the stored length was a one-way route: add an equal return leg
+function confirmLengthsOneWay() {
+  circuits.forEach(c => { c.lengthsPaired = true; c.lengthReturn = ''; });
+  lengthsNeedConfirming = false;
+  renderCircuits();
+  showToast('Return legs added equal to flow legs');
+}
+
+// User confirms the stored length already covered flow + return: split it evenly
+function confirmLengthsTotal() {
+  circuits.forEach(c => {
+    const half = (parseFloat(c.length) || 0) / 2;
+    c.length = +half.toFixed(2);
+    c.lengthsPaired = true;
+    c.lengthReturn = '';
+  });
+  lengthsNeedConfirming = false;
+  renderCircuits();
+  showToast('Lengths split evenly between flow and return');
+}
+
+function dismissLengthPrompt() {
+  lengthsNeedConfirming = false;
+  renderCircuits();
+}
+
+function renderTopologySummary() {
+  const el = document.getElementById('topologySummary');
+  if (!el) return;
+
+  const counts = { main: 0, consumer: 0, future: 0, plant: 0 };
+  circuits.forEach(c => { counts[circuitType(c)] = (counts[circuitType(c)] || 0) + 1; });
+  const orphans = circuits.filter(c => c.parentId === null || c.parentId === undefined).length;
+
+  const issues = rollupCheck();
+  const paths = evaluatePaths();
+
+  let html = '<div style="color:var(--ink-soft);margin-bottom:8px">'
+    + Object.keys(CIRCUIT_TYPES).filter(k => counts[k] > 0)
+        .map(k => '<span style="display:inline-block;margin-right:12px"><strong style="color:' + CIRCUIT_TYPES[k].colour + '">' + counts[k] + '</strong> ' + CIRCUIT_TYPES[k].label.toLowerCase() + '</span>').join('')
+    + '<span style="color:var(--muted)">\u00b7 ' + orphans + ' fed direct from plant</span></div>';
+
+  if (typesNeedConfirming) {
+    html += '<div style="background:#fff8e6;border-left:3px solid #c28a00;padding:9px 12px;margin-bottom:8px">'
+      + '<strong style="color:#8a6100">Types were inferred</strong> from the old convention (a consumer pressure loss meant a terminal). '
+      + 'Check the Type column, then set <em>Fed from</em> so the tool knows how the system connects. '
+      + '<button onclick="typesNeedConfirming=false;renderCircuits()" style="background:transparent;border:none;color:#8a6100;font-weight:700;cursor:pointer;font-family:inherit;font-size:12px;text-decoration:underline;padding:0 0 0 4px">Confirmed</button></div>';
+  }
+
+  // --- Flow roll-up ---
+  if (issues.length > 0) {
+    html += '<div style="background:#fdecea;border-left:3px solid #c74418;padding:10px 13px;margin-bottom:8px">'
+      + '<strong style="color:#a5361a">Flow continuity \u2014 ' + issues.length + ' main' + (issues.length === 1 ? '' : 's') + ' do not match their branches</strong>'
+      + issues.map(i => '<div style="margin-top:6px;font-size:12px">'
+          + '<span style="font-size:9px;font-weight:800;letter-spacing:0.5px;padding:1px 5px;border-radius:2px;color:#fff;background:' + (i.severity === 'ERROR' ? '#a5361a' : '#c28a00') + '">' + i.severity + '</span> '
+          + '<strong>' + escHtml(i.ref) + '</strong> carries <strong>' + i.own.toFixed(1) + ' kW</strong>, '
+          + 'but its ' + i.children.length + ' branch' + (i.children.length === 1 ? '' : 'es') + ' total <strong>' + i.sum.toFixed(1) + ' kW</strong> '
+          + '<span style="color:#a5361a">(' + (i.diff > 0 ? '+' : '') + i.diff.toFixed(1) + ' kW, ' + i.pct.toFixed(1) + '%)</span>'
+          + '<div style="color:var(--muted);font-size:11px">Branches: ' + i.children.map(escHtml).join(', ') + '</div>'
+          + '</div>').join('')
+      + '</div>';
+  } else if (circuits.some(c => childrenOf(c.id).length > 0)) {
+    html += '<div style="background:rgba(11,122,75,0.10);border-left:3px solid #0b7a4b;padding:9px 12px;margin-bottom:8px;color:#0b5c39">'
+      + '<strong>Flow continuity checks out</strong> \u2014 every main matches the sum of its branches within ' + getRollupTolerance() + '%.</div>';
+  }
+
+  // --- Critical path ---
+  if (paths.length > 0) {
+    const top = paths.slice(0, 3);
+    html += '<div style="background:rgba(122,209,228,0.12);border-left:3px solid var(--brand-blue);padding:10px 13px">'
+      + '<strong style="color:var(--brand-blue-deep)">Most onerous paths</strong>'
+      + top.map((p, i) => '<div style="margin-top:5px;font-size:12px">'
+          + '<strong>' + (i + 1) + '.</strong> ' + escHtml(p.terminal) + ' \u2014 <strong>' + p.kPa.toFixed(1) + ' kPa</strong>'
+          + (i > 0 ? ' <span style="color:var(--muted)">(' + (top[0].kPa - p.kPa).toFixed(1) + ' kPa less than the index)</span>' : ' <span style="color:var(--brand-blue-deep);font-weight:700">\u2190 index</span>')
+          + '<div style="color:var(--muted);font-size:11px">' + p.segments.map(escHtml).join(' \u2192 ') + '</div>'
+          + '</div>').join('')
+      + '</div>';
+  } else {
+    html += '<div style="color:var(--muted);font-size:12px">Set <em>Fed from</em> on each circuit to build the tree, then paths can be evaluated automatically.</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function renderTopologySummary_end() {}
+
+function renderLengthPrompt() {
+  const el = document.getElementById('lengthPrompt');
+  if (!el) return;
+  if (!lengthsNeedConfirming) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+}
+
+function lengthFlow(c)   { return parseFloat(c.length) || 0; }
+function lengthReturn(c) {
+  if (c.lengthsPaired !== false) return lengthFlow(c);
+  const v = parseFloat(c.lengthReturn);
+  return isNaN(v) ? 0 : v;
+}
+function lengthTotal(c)  { return lengthFlow(c) + lengthReturn(c); }
+
+// Automatic flange count: one flanged joint per 6 m of installed pipe
+function autoFlangeCount(c) { return Math.ceil(lengthTotal(c) / 6); }
+function effectiveFlangeCount(c) {
+  return (c.flangeAuto !== false || c.flangeCount === null || c.flangeCount === undefined)
+    ? autoFlangeCount(c)
+    : (parseFloat(c.flangeCount) || 0);
+}
+function effectiveValveCount(c) { return parseFloat(c.valveCount) || 0; }
+
+function waterRho(T) {   // kg/m3
+  return ((1.051865e-05 * T - 5.171329e-03) * T - 6.179237e-03) * T + 1000.068;
+}
+function waterCp(T) {    // kJ/kg.K
+  return (((1.606849e-09 * T - 4.736562e-07) * T + 5.721385e-05) * T - 2.586464e-03) * T + 4.215269;
+}
+
+function getSupplyTemp() { const v = parseFloat((document.getElementById('fluidTemp')||{}).value);  return isNaN(v) ? 80 : v; }
+function getReturnTemp() { const v = parseFloat((document.getElementById('returnTemp')||{}).value); return isNaN(v) ? 60 : v; }
+function getMeanTemp()   { return (getSupplyTemp() + getReturnTemp()) / 2; }
+function autoPropsOn()   { const el = document.getElementById('autoProps'); return el ? el.checked : false; }
+
+// Recalculate rho and cp from the mean operating temperature
+function onBasisChange() {
+  const auto = autoPropsOn();
+  const rhoEl = document.getElementById('rho');
+  const cpEl  = document.getElementById('cp');
+  const rhoTag = document.getElementById('rhoTag');
+  const cpTag  = document.getElementById('cpTag');
+
+  if (auto) {
+    const Tm = getMeanTemp();
+    const g  = parseInt((document.getElementById('glycol')||{}).value) || 0;
+    // GLYCOL_TABLE is referenced to ~20 C, so take the ratio against its 0% row
+    const gp = getGlycolProps(g), w20 = getGlycolProps(0);
+    const gRho = gp[0] / w20[0];
+    const gCp  = gp[1] / w20[1];
+    rhoEl.value = (waterRho(Tm) * gRho).toFixed(1);
+    cpEl.value  = (waterCp(Tm)  * gCp ).toFixed(4);
+    rhoEl.readOnly = true;  cpEl.readOnly = true;
+    rhoEl.style.background = 'var(--off-white)';  cpEl.style.background = 'var(--off-white)';
+    if (rhoTag) { rhoTag.textContent = 'CALC'; rhoTag.style.background = 'var(--brand-blue)'; }
+    if (cpTag)  { cpTag.textContent  = 'CALC'; cpTag.style.background  = 'var(--brand-blue)'; }
+  } else {
+    rhoEl.readOnly = false; cpEl.readOnly = false;
+    rhoEl.style.background = ''; cpEl.style.background = '';
+    if (rhoTag) { rhoTag.textContent = 'MANUAL'; rhoTag.style.background = '#c28a00'; }
+    if (cpTag)  { cpTag.textContent  = 'MANUAL'; cpTag.style.background  = '#c28a00'; }
+  }
+  renderBasisSummary();
+  renderCircuits();
+}
+
+function renderBasisSummary() {
+  const el = document.getElementById('basisSummary');
+  if (!el) return;
+  const Ts = getSupplyTemp(), Tr = getReturnTemp(), Ta = getAmbientTemp(), Tm = getMeanTemp();
+  const rho = parseFloat(document.getElementById('rho').value) || 0;
+  const cp  = parseFloat(document.getElementById('cp').value) || 0;
+  el.innerHTML =
+      '<strong style="color:var(--brand-blue-deep)">Design basis:</strong> '
+    + Ts.toFixed(0) + ' / ' + Tr.toFixed(0) + ' \u00b0C, system \u0394T <strong>' + (Ts - Tr).toFixed(0) + ' K</strong>, '
+    + 'mean operating temperature <strong>' + Tm.toFixed(1) + ' \u00b0C</strong> in a ' + Ta.toFixed(0) + ' \u00b0C ambient.'
+    + '<div style="margin-top:4px;color:var(--ink-soft)">'
+    + 'Flow duty uses \u03c1 ' + rho.toFixed(1) + ' kg/m\u00b3 and c\u209a ' + cp.toFixed(4) + ' kJ/kg\u00b7K at the mean temperature'
+    + (autoPropsOn() ? '' : ' <span style="color:#c28a00;font-weight:700">(entered manually)</span>')
+    + '. Flow leg loses heat at \u0394T ' + (Ts - Ta).toFixed(0) + ' K, return leg at \u0394T ' + (Tr - Ta).toFixed(0) + ' K.'
+    + '</div>';
+}
+
 function calculateCircuit(c) {
   const rho = parseFloat(document.getElementById('rho').value) || 999;
   const cp  = parseFloat(document.getElementById('cp').value)  || 4.182;
@@ -2382,8 +2915,9 @@ function calculateCircuit(c) {
     recommended = autoRecommended;
   }
 
-  // Total pressure loss for the recommended pipe
-  const length = parseFloat(c.length) || 0;
+  // Total pressure loss for the recommended pipe.
+  // The hydraulic path is flow leg + return leg (both carry the flow).
+  const length = lengthTotal(c);
   const fittings = parseFloat(c.fittings) || 0;
   const consumerLoad = parseFloat(c.consumerLoad) || 0;
   const effectiveLength = length * (1 + fittings / 100);
@@ -2754,7 +3288,7 @@ function buildCascadeHTML() {
 /* ---- DWELL: per-circuit and whole-system decay ---- */
 function buildDecayHTML() {
   const Tamb = getAmbientTemp();
-  const T0 = getFluidTemp();
+  const T0 = shutdownStartTemp();
   const Ttgt = getTargetTemp();
   const HOURS = [1,2,4,6,8,12,18,24];
 
@@ -2794,6 +3328,7 @@ function buildDecayHTML() {
 
   const th = 'style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase"';
   return hdr
+    + '<div style="background:#fff8e6;border-left:3px solid #c28a00;padding:9px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.55">'  + '<strong style="color:#8a6100">Starting condition:</strong> ' + shutdownScenarioNote() + '</div>'
     + '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px">Exact exponential decay, T = T<sub>amb</sub> + (T\u2080 \u2212 T<sub>amb</sub>)\u00b7e<sup>\u2212t/\u03c4</sup>, valid at any duration. Figures in <span style="color:#c74418">red</span> are below the ' + Ttgt.toFixed(0) + ' \u00b0C target.</div>'
     + '<div style="font-weight:700;font-size:12px;margin:12px 0 5px">System as one mixed volume <span style="font-weight:400;color:var(--muted)">\u2014 \u03c4 = ' + (sys.tau_s/3600).toFixed(1) + ' h, ' + sys.mass.toFixed(0) + ' kg, UA ' + sys.ua.toFixed(1) + ' W/K</span></div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
@@ -2957,7 +3492,10 @@ function renderCircuits() {
       + '<button class="row-delete" onclick="deleteCircuit(' + c.id + ')" title="Remove">\xd7</button></td>'
       + '<td class="td-index" data-label="Index Run"><div class="index-check-wrap"><input type="checkbox" class="index-check" ' + (c.isIndex ? 'checked' : '') + ' onchange="updateCircuitField(' + c.id + ',\'isIndex\',this.checked)"></div></td>'
       + '<td class="td-index" data-label="LLH Header"><div class="index-check-wrap"><input type="checkbox" class="index-check" ' + (c.isLLH ? 'checked' : '') + ' onchange="updateCircuitField(' + c.id + ',\'isLLH\',this.checked)" title="Size as low loss header"></div></td>'
-      + '<td class="td-ref" data-label="Reference"><input type="text" value="' + c.ref.replace(/"/g,'&quot;') + '" onchange="updateCircuitField(' + c.id + ',\'ref\',this.value)"></td>'
+      + '<td class="td-ref" data-label="Reference"><div style="display:flex;align-items:center;gap:0">'
+      +   (circuitDepth(c) > 0 ? '<span style="color:var(--muted);font-size:11px;white-space:pre;flex-shrink:0">' + '\u2502  '.repeat(Math.max(0, circuitDepth(c) - 1)) + '\u2514\u2500 </span>' : '')
+      +   '<input type="text" value="' + c.ref.replace(/"/g,'&quot;') + '" onchange="updateCircuitField(' + c.id + ',\'ref\',this.value)">'
+      + '</div></td>'
       + '<td data-label="Mode"><select class="mode-select" onchange="updateCircuitField(' + c.id + ',\'mode\',this.value)">'
       + '<option value="fromKw"' + (c.mode==='fromKw'?' selected':'') + '>Size from kW</option>'
       + '<option value="fromFlow"' + (c.mode==='fromFlow'?' selected':'') + '>Size from l/s</option></select></td>'
@@ -2974,7 +3512,21 @@ function renderCircuits() {
       + '<td data-label="Input A (kW)">' + inputA + '</td>'
       + '<td data-label="\u0394T (K)"><input type="number" value="' + c.dT + '" step="0.5" min="0.1" onchange="updateCircuitField(' + c.id + ',\'dT\',this.value)"></td>'
       + '<td data-label="Input B (l/s)">' + inputB + '</td>'
-      + '<td data-label="Length (m)"><input type="number" value="' + c.length + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'length\',this.value)"></td>'
+      + '<td data-label="Type"><select onchange="updateCircuitField(' + c.id + ',\'circuitType\',this.value)" style="font-size:11px;padding:5px 4px">'
+      +   Object.keys(CIRCUIT_TYPES).map(k => '<option value="' + k + '"' + (circuitType(c) === k ? ' selected' : '') + '>' + CIRCUIT_TYPES[k].short + '</option>').join('')
+      + '</select></td>'
+      + '<td data-label="Fed from"><select onchange="setCircuitParent(' + c.id + ',this.value)" style="font-size:11px;padding:5px 4px;max-width:130px">'
+      +   '<option value=""' + ((c.parentId === null || c.parentId === undefined) ? ' selected' : '') + '>\u2014 plant</option>'
+      +   circuits.filter(o => o.id !== c.id && !wouldCycle(c.id, o.id))
+                 .map(o => '<option value="' + o.id + '"' + (c.parentId === o.id ? ' selected' : '') + '>' + escHtml(o.ref).slice(0,28) + '</option>').join('')
+      + '</select></td>'
+      + '<td data-label="Flow (m)"><input type="number" value="' + c.length + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'length\',this.value)"></td>'
+      + '<td data-label="Return (m)"><div style="display:flex;align-items:center;gap:4px">'
+      +   '<input type="number" value="' + (c.lengthsPaired !== false ? lengthFlow(c) : (c.lengthReturn === '' ? '' : c.lengthReturn)) + '" step="1" min="0"'
+      +     (c.lengthsPaired !== false ? ' readonly style="background:var(--off-white);color:var(--muted)"' : '')
+      +     ' onchange="updateCircuitField(' + c.id + ',\'lengthReturn\',this.value)">'
+      +   '<button onclick="toggleLengthPair(' + c.id + ')" title="' + (c.lengthsPaired !== false ? 'Locked to flow leg' : 'Independent') + '" style="background:transparent;border:none;cursor:pointer;font-size:10px;font-weight:700;padding:2px 3px;color:' + (c.lengthsPaired !== false ? 'var(--brand-blue-deep)' : '#c28a00') + '">' + (c.lengthsPaired !== false ? 'LINK' : 'FREE') + '</button>'
+      + '</div></td>'
       + '<td data-label="Fittings %"><input type="number" value="' + c.fittings + '" step="5" min="0" max="40" onchange="updateCircuitField(' + c.id + ',\'fittings\',this.value)"></td>'
       + '<td data-label="Consumer Load (kPa)"><input type="number" value="' + c.consumerLoad + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'consumerLoad\',this.value)" title="Equipment \u0394P: AHU coil, HX, FCU etc."></td>'
       + '<td class="derived-cell" data-label="Mass Flow (kg/s)">' + mdotDerived + '</td>'
@@ -2987,8 +3539,10 @@ function renderCircuits() {
       + '<td class="derived-cell" data-label="Pipe Loss (kPa)">' + pipeLossText + '</td>'
       + '<td class="derived-cell" data-label="Total Loss">' + totalLossText + '</td>'
       + '<td class="derived-cell" data-label="Weight &amp; Volume">' + weightText + '</td>'
-      + '<td class="td-thermal" data-label="Valves"><input type="number" value="' + (c.valveCount || 0) + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'valveCount\',this.value)"></td>'
-      + '<td class="td-thermal" data-label="Flanges"><input type="number" value="' + (c.flangeCount || 0) + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'flangeCount\',this.value)"></td>'
+      + '<td class="td-thermal" data-label="Valves"><input type="number" value="' + effectiveValveCount(c) + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'valveCount\',this.value); markValveOverride(' + c.id + ')">'
+      +   '<div style="font-size:9px;font-weight:700;letter-spacing:0.5px;margin-top:2px;color:' + (c.valveAuto !== false ? 'var(--brand-blue-deep)' : '#c28a00') + '">' + (c.valveAuto !== false ? 'AUTO' : 'OVERRIDE') + '</div></td>'
+      + '<td class="td-thermal" data-label="Flanges"><input type="number" value="' + effectiveFlangeCount(c) + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'flangeCount\',this.value); markFlangeOverride(' + c.id + ')">'
+      +   '<div style="font-size:9px;font-weight:700;letter-spacing:0.5px;margin-top:2px;color:' + (c.flangeAuto !== false ? 'var(--brand-blue-deep)' : '#c28a00') + '">' + (c.flangeAuto !== false ? 'AUTO 1/6m' : 'OVERRIDE') + '</div></td>'
       + '<td class="td-thermal" data-label="Insul. mm"><input type="number" value="' + (c.insThickness === '' || c.insThickness === undefined ? '' : c.insThickness) + '" step="5" min="0" placeholder="' + (result.recommended ? insulationThicknessForOD(result.recommended.od) : '') + '" title="Blank = schedule default" onchange="updateCircuitField(' + c.id + ',\'insThickness\',this.value)"></td>'
       + '<td class="derived-cell td-thermal" data-label="Heat Loss">' + heatText + '</td>'
       + '<td data-label="Status">' + statusBadge + '</td>';
@@ -3024,6 +3578,8 @@ function renderCircuits() {
   document.getElementById('t-syshead').textContent = sysHeadBar.toFixed(2);
   document.getElementById('t-conskw').textContent  = consumerKw.toFixed(1);
   document.body.classList.toggle('thermal-on', thermalEnabled());
+  renderLengthPrompt();
+  renderTopologySummary();
   renderThermalSummary();
   renderPlantSummary();
   document.getElementById('t-maxloss').textContent = indexLoss_kPa.toFixed(1);
@@ -3142,8 +3698,13 @@ function onGlycolChange() {
   document.getElementById('pv-rho').textContent = rho;
   document.getElementById('pv-cp').textContent = cp.toFixed(3);
   document.getElementById('pv-fp').textContent = fp.toFixed(1);
+  if (autoPropsOn()) {
+    onBasisChange();          // recompute at mean temperature with the new glycol factors
+    return;
+  }
   document.getElementById('rho').value = rho;
   document.getElementById('cp').value = cp.toFixed(3);
+  renderBasisSummary();
   renderCircuits();
 }
 
@@ -3803,7 +4364,7 @@ function showToast(msg) {
    or open them on another device. Unlike browser storage they are
    never purged and are not tied to one machine.
    ============================================================ */
-const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor", "insType", "insLambda", "surfaceFinish", "fluidTemp", "ambientTemp", "dwellMins", "flangeFactor", "targetTemp", "diversityFactor", "plantMargin", "plantOutput", "recoverFrom", "recoverTo", "plantDT"];
+const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor", "insType", "insLambda", "surfaceFinish", "fluidTemp", "ambientTemp", "dwellMins", "flangeFactor", "targetTemp", "diversityFactor", "plantMargin", "plantOutput", "recoverFrom", "recoverTo", "plantDT", "returnTemp", "shutdownScenario", "customStartTemp", "rollupTol"];
 
 function buildProjectSnapshot() {
   const settings = {};
@@ -3900,9 +4461,9 @@ function handleProjectFile(evt) {
       }
     }
     // Restore circuits (backfill any fields added since the file was written)
-    circuits = data.circuits.map(cc => Object.assign({
+    circuits = migrateLengths(data.circuits.map(cc => Object.assign({
       length: 20, fittings: 20, isIndex: false, consumerLoad: 0, isLLH: false, sizeOverride: 0,
-    }, cc));
+    }, cc)));
     nextId = data.nextId || (circuits.length + 1);
     if (typeof onGlycolChange === 'function') onGlycolChange();
     renderCircuits();
@@ -3930,6 +4491,8 @@ function saveToLocalStorage() {
       projectRef: document.getElementById('projectRef').value,
       engineer: document.getElementById('engineer').value,
       calcDate: document.getElementById('calcDate').value,
+      returnTemp: document.getElementById('returnTemp').value,
+      autoProps: document.getElementById('autoProps').checked,
       thermal: {
         enabled: document.getElementById('thermalEnabled').checked,
         insType: document.getElementById('insType').value,
@@ -3948,6 +4511,8 @@ function saveToLocalStorage() {
         recoverFrom: document.getElementById('recoverFrom').value,
         recoverTo: document.getElementById('recoverTo').value,
         plantDT: document.getElementById('plantDT').value,
+        shutdownScenario: document.getElementById('shutdownScenario').value,
+        customStartTemp: document.getElementById('customStartTemp').value,
       },
     };
     localStorage.setItem('adi_pipesizer_v2', JSON.stringify(state));
@@ -3960,10 +4525,10 @@ function loadFromLocalStorage() {
     if (!raw) return false;
     const s = JSON.parse(raw);
     if (s.circuits) {
-      circuits = s.circuits.map(c => ({
+      circuits = migrateLengths(s.circuits.map(c => ({
         length: 20, fittings: 30, isIndex: false, consumerLoad: 0, isLLH: false, sizeOverride: 0,
         ...c,
-      }));
+      })));
       nextId = s.nextId || circuits.length + 1;
     }
     if (s.glycol !== undefined) document.getElementById('glycol').value = s.glycol;
@@ -3974,6 +4539,8 @@ function loadFromLocalStorage() {
     if (s.projectRef) document.getElementById('projectRef').value = s.projectRef;
     if (s.engineer) document.getElementById('engineer').value = s.engineer;
     if (s.calcDate) document.getElementById('calcDate').value = s.calcDate;
+    if (s.returnTemp) document.getElementById('returnTemp').value = s.returnTemp;
+    if (s.autoProps !== undefined) document.getElementById('autoProps').checked = !!s.autoProps;
     if (s.thermal) {
       const t = s.thermal;
       if (t.enabled !== undefined) document.getElementById('thermalEnabled').checked = !!t.enabled;
@@ -3995,6 +4562,8 @@ function loadFromLocalStorage() {
       if (pl.recoverFrom) document.getElementById('recoverFrom').value = pl.recoverFrom;
       if (pl.recoverTo !== undefined) document.getElementById('recoverTo').value = pl.recoverTo;
       if (pl.plantDT) document.getElementById('plantDT').value = pl.plantDT;
+      if (pl.shutdownScenario) document.getElementById('shutdownScenario').value = pl.shutdownScenario;
+      if (pl.customStartTemp !== undefined) document.getElementById('customStartTemp').value = pl.customStartTemp;
     }
     return true;
   } catch (e) { return false; }
@@ -4023,6 +4592,10 @@ function formatDateGB(iso) {
   document.getElementById(id).addEventListener('input', renderCircuits);
 });
 document.getElementById('glycol').addEventListener('input', onGlycolChange);
+['fluidTemp','returnTemp','ambientTemp'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', onBasisChange);
+});
 document.getElementById('pipeCondition').addEventListener('change', e => {
   document.getElementById('customRoughnessRow').style.display = e.target.value === 'custom' ? 'grid' : 'none';
   renderCircuits();
@@ -4071,7 +4644,7 @@ if (!loadFromLocalStorage() || circuits.length === 0) {
   addCircuit({ ref: 'Primary/Secondary LLH',  mode: 'fromFlow', lps: 3.5, dT: 6, length: 1.5,fittings: 10, isIndex: false, consumerLoad: 0,  isLLH: true  });
 }
 
-onGlycolChange();
+onBasisChange();   // sets fluid properties from the mean temperature, then renders
 </script>
 </body>
 </html>
