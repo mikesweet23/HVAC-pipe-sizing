@@ -1006,6 +1006,19 @@
     <div class="card">
       <div class="card-title">Design Basis &amp; Fluid <span class="hint">project defaults · circuits may override</span></div>
 
+      <div class="field" style="margin-bottom:14px">
+        <label>System Type <span class="unit">sets the design basis</span></label>
+        <select id="systemPreset" onchange="applySystemPreset()">
+          <option value="lphw" selected>LPHW heating 80/60</option>
+          <option value="lphw7050">LPHW heating 70/50</option>
+          <option value="mthw">MTHW heating 110/80</option>
+          <option value="chilled">Chilled water 6/12</option>
+          <option value="chilled1">Chilled water 7/13</option>
+          <option value="condenser">Condenser water 30/35</option>
+          <option value="custom">Custom — set manually</option>
+        </select>
+      </div>
+
       <div class="row3" style="margin-bottom:16px">
         <div class="field">
           <label>Design Supply <span class="unit">°C</span></label>
@@ -1229,7 +1242,7 @@
             <th class="derived">Pipe Loss</th>
             <th class="derived">Total Loss</th>
             <th class="derived" title="Pipe + water weight per metre, and total mass over straight length">Weight &amp; Volume</th>
-            <th class="th-thermal" title="Number of valves on this circuit requiring insulation jackets">Valves</th>
+            <th title="Three-port or bypass circuit — stays open on start-up when two-port consumers close">Bypass</th><th class="th-thermal" title="Ambient around this circuit. Blank uses the project figure — set it where a circuit runs outdoors or through an unheated area.">Ambient °C</th><th class="th-thermal" title="Number of valves on this circuit requiring insulation jackets">Valves</th>
             <th class="th-thermal" title="Number of flange pairs on this circuit requiring insulation jackets">Flanges</th>
             <th class="th-thermal" title="Insulation thickness — blank uses the BS 5422 schedule for this pipe OD">Insul. mm</th>
             <th class="derived th-thermal" title="Heat loss from pipe, valve jackets and flange covers at the design ΔT">Heat Loss</th>
@@ -1326,6 +1339,36 @@
         The uplift covers lagging/insulation, cladding, valves, flanges, brackets, and small fittings. Defaults to 20% &mdash; increase to 25–30% for plantrooms with dense fittings, or reduce to 10–15% for clean straight runs without insulation. Use the resulting figure for structural support load assessment, lifting plans, and roof load checks.
       </div>
     </div>
+  </div>
+
+  <!-- Plant Volumes -->
+  <div class="card" id="plantVolumeCard" style="margin-bottom:24px">
+    <div class="card-title">
+      Plant Volumes
+      <span class="hint">water held outside the pipework schedule</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:600px">
+        <thead>
+          <tr style="background:var(--brand-blue-dark);color:var(--white)">
+            <th style="text-align:left;padding:7px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">Item</th>
+            <th style="text-align:left;padding:7px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">Type</th>
+            <th style="text-align:left;padding:7px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase;width:70px">Qty</th>
+            <th style="text-align:left;padding:7px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase;width:100px">Litres ea.</th>
+            <th style="text-align:left;padding:7px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase;width:110px" title="Optional standing loss at design conditions">Loss W ea.</th>
+            <th style="width:44px"></th>
+          </tr>
+        </thead>
+        <tbody id="plantVolumeBody"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button onclick="addPlantItem()" style="background:var(--brand-blue);color:var(--black);border:none;border-radius:5px;padding:9px 14px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px;min-height:40px">+ Add plant item</button>
+      <button onclick="addPlantItem({name:'Buffer vessel',type:'buffer',litres:1000})" style="background:var(--white);color:var(--ink);border:1px solid var(--line-strong);border-radius:5px;padding:9px 14px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px;min-height:40px">+ Buffer</button>
+      <button onclick="addPlantItem({name:'Low-loss header',type:'llh',litres:150})" style="background:var(--white);color:var(--ink);border:1px solid var(--line-strong);border-radius:5px;padding:9px 14px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px;min-height:40px">+ LLH</button>
+      <button onclick="addPlantItem({name:'Boiler',type:'boiler',litres:400})" style="background:var(--white);color:var(--ink);border:1px solid var(--line-strong);border-radius:5px;padding:9px 14px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px;min-height:40px">+ Boiler</button>
+    </div>
+    <div id="plantVolumeTotal" style="background:rgba(122,209,228,0.12);border-left:3px solid var(--brand-blue);padding:10px 13px;margin-top:14px;font-size:12.5px;line-height:1.55"></div>
   </div>
 
   <!-- Thermal / Heat Loss -->
@@ -1935,6 +1978,10 @@ function newCircuit(overrides = {}) {
     lengthsPaired: overrides.lengthsPaired ?? true,
     circuitType: overrides.circuitType ?? 'main',  // main | consumer | future | plant
     parentId: overrides.parentId ?? null,          // null = fed directly from plant
+    ambient: overrides.ambient ?? '',              // '' = use the project ambient
+    isBypass: overrides.isBypass ?? false,         // three-port / bypass: keeps flowing on start-up
+    bypassMode: overrides.bypassMode ?? 'pct',     // 'pct' of design flow, or 'lps'
+    bypassValue: overrides.bypassValue ?? '',      // '' = full design flow for this circuit
     valveCount: overrides.valveCount ?? 6,        // AUTO default per project spec
     valveAuto: overrides.valveAuto ?? true,
     flangeCount: overrides.flangeCount ?? null,   // null = auto from installed length
@@ -2263,7 +2310,7 @@ function circuitUA(c, result) {
 /* ---- Heat loss at a given deltaT (all terms linear in deltaT) ---- */
 function circuitHeatLoss(c, result, deltaT) {
   const u = circuitUA(c, result);
-  const Ta = getAmbientTemp();
+  const Ta = circuitAmbient(c);      // per-circuit ambient, falling back to the project figure
   // Each leg sits at its own temperature. If an explicit deltaT is passed
   // (the 5 K increment table), it is applied uniformly instead.
   const uniform = (deltaT !== undefined);
@@ -2303,7 +2350,6 @@ function circuitHeatLoss(c, result, deltaT) {
    plant -> index terminal top to bottom.                              */
 function indexCascade(turndownPct) {
   const cp = (parseFloat(document.getElementById('cp').value) || 4.182) * 1000; // J/kg.K
-  const Tamb = getAmbientTemp();
   const scale = (turndownPct === undefined ? 100 : turndownPct) / 100;
   let T = getFluidTemp();
   const segs = [];
@@ -2314,6 +2360,7 @@ function indexCascade(turndownPct) {
     const u = circuitUA(c, r);
     // Supply cascade sees the flow leg and its share of fittings only.
     const uaLeg = u.uaPipeFlow + u.uaFittingsFlow;
+    const Tamb = circuitAmbient(c);   // this segment's own surroundings
     const mdot = (r.mdot || 0) * scale;
     const Tin = T;
     let Tout = Tin;
@@ -2407,12 +2454,14 @@ function circuitDecay(c) {
   const m  = r.weights.water_kg_total;
   const tau = (u.ua > 0 && m > 0) ? (m * cp / u.ua) : 0;
   return { ref: c.ref, nom: r.recommended.nom, litres: r.weights.water_l_total,
-           mass: m, ua: u.ua, tau_s: tau, isIndex: !!c.isIndex };
+           mass: m, ua: u.ua, tau_s: tau, isIndex: !!c.isIndex, ambient: circuitAmbient(c) };
 }
 
 // System treated as one mixed volume
 function systemDecay() {
-  let m = 0, ua = 0;
+  let m = plantVolumeKg(), ua = 0;
+  const dTref = Math.abs(getMeanTemp() - getAmbientTemp());
+  if (dTref > 0) ua += plantLossW() / dTref;   // convert the declared plant loss to a conductance
   circuits.forEach(c => {
     const d = circuitDecay(c);
     if (!d) return;
@@ -2797,6 +2846,191 @@ function waterCp(T) {    // kJ/kg.K
   return (((1.606849e-09 * T - 4.736562e-07) * T + 5.721385e-05) * T - 2.586464e-03) * T + 4.215269;
 }
 
+/* ============================================================
+   SYSTEM PRESETS
+   A starting point for the design basis. Chilled systems run below
+   ambient, so heat flows INTO the pipework — the maths is identical
+   but the sign reverses, and the wording changes from loss to gain.
+   ============================================================ */
+const SYSTEM_PRESETS = {
+  lphw:    { label: 'LPHW heating 80/60',      supply: 80,  ret: 60,  ambient: 20 },
+  lphw7050:{ label: 'LPHW heating 70/50',      supply: 70,  ret: 50,  ambient: 20 },
+  mthw:    { label: 'MTHW heating 110/80',     supply: 110, ret: 80,  ambient: 20 },
+  chilled: { label: 'Chilled water 6/12',      supply: 6,   ret: 12,  ambient: 20 },
+  chilled1: {label: 'Chilled water 7/13',      supply: 7,   ret: 13,  ambient: 20 },
+  condenser:{label: 'Condenser water 30/35',   supply: 30,  ret: 35,  ambient: 20 },
+  custom:  { label: 'Custom \u2014 set manually', supply: null, ret: null, ambient: null },
+};
+
+function applySystemPreset() {
+  const key = (document.getElementById('systemPreset') || {}).value;
+  const p = SYSTEM_PRESETS[key];
+  if (!p || p.supply === null) { onBasisChange(); return; }
+  document.getElementById('fluidTemp').value   = p.supply;
+  document.getElementById('returnTemp').value  = p.ret;
+  document.getElementById('ambientTemp').value = p.ambient;
+  onBasisChange();
+  showToast(p.label + ' applied');
+}
+
+// True when the fluid sits below ambient, so the system gains heat rather than losing it
+function isCoolingSystem() { return getMeanTemp() < getAmbientTemp(); }
+function lossWord(plural)  { return isCoolingSystem() ? (plural ? 'gains' : 'gain') : (plural ? 'losses' : 'loss'); }
+function lossWordCap()     { return isCoolingSystem() ? 'Gain' : 'Loss'; }
+
+/* ---- Per-circuit ambient ----
+   Some circuits run outdoors or through unheated areas. Blank uses the
+   project figure. */
+function circuitAmbient(c) {
+  if (!c) return getAmbientTemp();
+  const v = parseFloat(c.ambient);
+  return isNaN(v) ? getAmbientTemp() : v;
+}
+function anyCircuitAmbientOverride() {
+  return circuits.some(c => c.ambient !== '' && c.ambient !== null && c.ambient !== undefined && !isNaN(parseFloat(c.ambient)));
+}
+
+/* ============================================================
+   PLANT VOLUMES
+   Water held outside the pipework schedule — buffer vessels, boiler
+   and chiller shells, low-loss headers, manifolds, plate heat
+   exchangers. This matters more than it looks: it is thermal mass
+   the system has to heat, and it is the difference between
+   "scheduled pipework volume" and true system volume for expansion
+   vessel sizing.
+   ============================================================ */
+const PLANT_ITEM_TYPES = {
+  buffer:   'Buffer vessel',
+  boiler:   'Boiler / CHP shell',
+  chiller:  'Chiller shell / evaporator',
+  llh:      'Low-loss header',
+  header:   'Header / manifold',
+  phe:      'Plate heat exchanger',
+  vessel:   'Expansion / other vessel',
+  other:    'Other',
+};
+
+let plantItems = [];
+let nextPlantId = 1;
+
+function addPlantItem(o) {
+  o = o || {};
+  plantItems.push({
+    id: o.id ?? nextPlantId++,
+    name: o.name ?? '',
+    type: o.type ?? 'buffer',
+    litres: o.litres ?? 0,
+    lossW: o.lossW ?? '',      // optional standing loss at design conditions
+    qty: o.qty ?? 1,
+  });
+  if (o.id && o.id >= nextPlantId) nextPlantId = o.id + 1;
+  renderCircuits();
+}
+
+function updatePlantItem(id, field, value) {
+  const it = plantItems.find(x => x.id === id);
+  if (!it) return;
+  it[field] = value;
+  renderCircuits();
+}
+
+function deletePlantItem(id) {
+  plantItems = plantItems.filter(x => x.id !== id);
+  renderCircuits();
+}
+
+function plantVolumeLitres() {
+  return plantItems.reduce((s, it) => s + (parseFloat(it.litres) || 0) * (parseFloat(it.qty) || 1), 0);
+}
+function plantVolumeKg() {
+  const rho = parseFloat(document.getElementById('rho').value) || 999;
+  return plantVolumeLitres() * rho / 1000;
+}
+function plantLossW() {
+  return plantItems.reduce((s, it) => s + (parseFloat(it.lossW) || 0) * (parseFloat(it.qty) || 1), 0);
+}
+
+function renderPlantVolumes() {
+  const el = document.getElementById('plantVolumeBody');
+  if (!el) return;
+  if (plantItems.length === 0) {
+    el.innerHTML = '<tr><td colspan="6" style="padding:10px;color:var(--muted);font-size:12px">'
+      + 'No plant volumes added. Pipework alone understates system volume \u2014 add buffers, boiler shells and headers here.</td></tr>';
+  } else {
+    el.innerHTML = plantItems.map(it =>
+      '<tr>'
+      + '<td><input type="text" value="' + String(it.name).replace(/"/g,'&quot;') + '" placeholder="e.g. Buffer 1" onchange="updatePlantItem(' + it.id + ',\'name\',this.value)" style="width:100%"></td>'
+      + '<td><select onchange="updatePlantItem(' + it.id + ',\'type\',this.value)" style="width:100%;font-size:11.5px">'
+      +   Object.keys(PLANT_ITEM_TYPES).map(k => '<option value="' + k + '"' + (it.type === k ? ' selected' : '') + '>' + PLANT_ITEM_TYPES[k] + '</option>').join('')
+      + '</select></td>'
+      + '<td><input type="number" value="' + it.qty + '" min="1" step="1" onchange="updatePlantItem(' + it.id + ',\'qty\',this.value)" style="width:100%"></td>'
+      + '<td><input type="number" value="' + it.litres + '" min="0" step="10" onchange="updatePlantItem(' + it.id + ',\'litres\',this.value)" style="width:100%"></td>'
+      + '<td><input type="number" value="' + it.lossW + '" min="0" step="10" placeholder="\u2014" onchange="updatePlantItem(' + it.id + ',\'lossW\',this.value)" style="width:100%"></td>'
+      + '<td style="text-align:center"><button onclick="deletePlantItem(' + it.id + ')" class="row-delete" title="Remove">\u00d7</button></td>'
+      + '</tr>').join('');
+  }
+  const tot = document.getElementById('plantVolumeTotal');
+  if (tot) {
+    const pipeL = scheduledPipeLitres();
+    const plantL = plantVolumeLitres();
+    const totalL = pipeL + plantL;
+    tot.innerHTML =
+        'Scheduled pipework <strong>' + pipeL.toFixed(0) + ' L</strong>'
+      + ' + plant items <strong>' + plantL.toFixed(0) + ' L</strong>'
+      + ' = total system volume <strong style="color:var(--brand-blue-deep);font-size:14px">' + totalL.toFixed(0) + ' L</strong>'
+      + (plantL > 0 ? ' <span style="color:var(--muted)">(' + (plantL / totalL * 100).toFixed(0) + '% held in plant)</span>' : '')
+      + (plantLossW() > 0 ? '<div style="margin-top:4px;color:var(--ink-soft)">Plant standing ' + lossWord(false) + ': <strong>' + plantLossW().toFixed(0) + ' W</strong></div>' : '');
+  }
+}
+
+function scheduledPipeLitres() {
+  let l = 0;
+  circuits.forEach(c => {
+    const r = calculateCircuit(c);
+    if (!r.error && r.recommended) l += r.weights.water_l_total;
+  });
+  return l;
+}
+
+/* ============================================================
+   BYPASS / THREE-PORT FLOW ON START-UP
+   From a cold start the two-port valves on consumers are shut, so the
+   only circulation is through whatever three-port or bypass circuits
+   remain open. That is the flow actually available to carry heat out
+   of the plant, and it is normally far less than design flow — which
+   makes recovery slower than a full-flow calculation suggests.
+   ============================================================ */
+function bypassFlowLps(c) {
+  if (!c.isBypass) return 0;
+  const r = calculateCircuit(c);
+  if (r.error || !r.recommended) return 0;
+  const design = r.vflow_ls || 0;
+  const v = parseFloat(c.bypassValue);
+  if (isNaN(v)) return design;                       // blank = full design flow for this circuit
+  return (c.bypassMode === 'lps') ? Math.max(0, v) : design * Math.max(0, v) / 100;
+}
+
+function systemBypassFlowLps() {
+  return circuits.reduce((s, c) => s + bypassFlowLps(c), 0);
+}
+function bypassCircuitCount() {
+  return circuits.filter(c => c.isBypass).length;
+}
+
+// Flow used for the recovery calculation: bypass flow if any circuit is
+// marked as a bypass, otherwise full system flow.
+function startupFlowLps() {
+  return bypassCircuitCount() > 0 ? systemBypassFlowLps() : systemFlowLps();
+}
+function startupFlowIsBypass() { return bypassCircuitCount() > 0; }
+
+function toggleBypass(id, on) {
+  const c = circuitById(id);
+  if (!c) return;
+  c.isBypass = !!on;
+  renderCircuits();
+}
+
 function getSupplyTemp() { const v = parseFloat((document.getElementById('fluidTemp')||{}).value);  return isNaN(v) ? 80 : v; }
 function getReturnTemp() { const v = parseFloat((document.getElementById('returnTemp')||{}).value); return isNaN(v) ? 60 : v; }
 function getMeanTemp()   { return (getSupplyTemp() + getReturnTemp()) / 2; }
@@ -2993,12 +3227,20 @@ function systemFlowLps() {
     const r = calculateCircuit(c);
     if (!r.error && r.vflow_ls > f) f = r.vflow_ls;
   });
+  if (f === 0) {
+    // No index run ticked yet — fall back to the largest circuit so the
+    // recovery and turnover figures still mean something.
+    circuits.forEach(c => {
+      const r = calculateCircuit(c);
+      if (!r.error && r.vflow_ls > f) f = r.vflow_ls;
+    });
+  }
   return f;
 }
 
 // Heat the circulating flow can physically carry: Q = mdot * cp * dT_plant
 function flowLimitedKw() {
-  const lps = systemFlowLps();
+  const lps = startupFlowLps();       // circulation actually available at start-up
   const rho = parseFloat(document.getElementById('rho').value) || 999;
   const cp  = parseFloat(document.getElementById('cp').value) || 4.182;
   return (lps * rho / 1000) * cp * getPlantDT();
@@ -3006,14 +3248,9 @@ function flowLimitedKw() {
 
 // One complete pass of the system contents through the plant, in seconds
 function turnoverSeconds() {
-  const lps = systemFlowLps();
+  const lps = startupFlowLps();
   if (lps <= 0) return null;
-  let litres = 0;
-  circuits.forEach(c => {
-    const r = calculateCircuit(c);
-    if (!r.error && r.recommended) litres += r.weights.water_l_total;
-  });
-  return litres / lps;
+  return (scheduledPipeLitres() + plantVolumeLitres()) / lps;
 }
 
 // Consumer duty = rows carrying a consumer load (kPa), i.e. terminals
@@ -3035,7 +3272,7 @@ function systemWaterKg() {
     const r = calculateCircuit(c);
     if (!r.error && r.recommended) m += r.weights.water_kg_total;
   });
-  return m;
+  return m + plantVolumeKg();      // buffers, shells, headers all have to be heated too
 }
 
 // Hours to raise the system from T0 to T1 with a given plant output
@@ -3136,9 +3373,19 @@ function renderPlantSummary() {
     }
   }
   if (turnS !== null && effKw > 0) {
+    const byp = startupFlowIsBypass();
     recText += '<div style="font-size:11px;color:var(--muted);margin-top:6px">'
-      + 'System flow ' + systemFlowLps().toFixed(2) + ' l/s \u00b7 one turnover ' + (turnS/60).toFixed(1) + ' min \u00b7 '
+      + (byp
+          ? 'Start-up flow <strong>' + startupFlowLps().toFixed(2) + ' l/s</strong> through ' + bypassCircuitCount() + ' bypass circuit'
+            + (bypassCircuitCount() === 1 ? '' : 's') + ' <span style="color:var(--muted)">(design flow ' + systemFlowLps().toFixed(2) + ' l/s)</span>'
+          : 'System flow ' + systemFlowLps().toFixed(2) + ' l/s')
+      + ' \u00b7 one turnover ' + (turnS/60).toFixed(1) + ' min \u00b7 '
       + 'flow can carry ' + flowKw.toFixed(0) + ' kW at \u0394T ' + getPlantDT().toFixed(0) + ' K</div>';
+    if (byp) {
+      recText += '<div style="font-size:11.5px;color:#8a6100;margin-top:5px">'
+        + 'Recovery is based on <strong>bypass flow only</strong>. From a cold start the two-port consumer valves are shut, '
+        + 'so only the three-port and bypass circuits circulate \u2014 which is why this takes longer than a full-flow figure suggests.</div>';
+    }
   }
 
   el.innerHTML =
@@ -3184,6 +3431,7 @@ function renderThermalSummary() {
   });
 
   const d = at(designDT);
+  const cooling = isCoolingSystem();
   const waterKg = base.waterKg;
   const drop = dwellTempDrop(d.totalW, waterKg, mins);
   const kJ   = d.totalW * mins * 60 / 1000;
@@ -3211,20 +3459,20 @@ function renderThermalSummary() {
 
   el.innerHTML =
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
-    +   '<div style="' + tileCss + '"><div style="' + labCss + '">System Standing Loss</div><div style="' + valCss + '">' + (d.totalW/1000).toFixed(2) + '</div><div style="font-size:10px;color:var(--muted)">kW at ' + designDT.toFixed(0) + ' K</div></div>'
-    +   '<div style="' + tileCss + '"><div style="' + labCss + '">Index Run Loss</div><div style="' + valCss + '">' + d.indexW.toFixed(0) + '</div><div style="font-size:10px;color:var(--muted)">W \u00b7 ticked circuits</div></div>'
+    +   '<div style="' + tileCss + '"><div style="' + labCss + '">System Standing Loss</div><div style="' + valCss + '">' + Math.abs(d.totalW/1000).toFixed(2) + '</div><div style="font-size:10px;color:var(--muted)">kW at ' + designDT.toFixed(0) + ' K</div></div>'
+    +   '<div style="' + tileCss + '"><div style="' + labCss + '">Index Run Loss</div><div style="' + valCss + '">' + Math.abs(d.indexW).toFixed(0) + '</div><div style="font-size:10px;color:var(--muted)">W \u00b7 ticked circuits</div></div>'
     +   '<div style="' + tileCss + '"><div style="' + labCss + '">Energy per ' + mins + ' min</div><div style="' + valCss + '">' + kJ.toFixed(0) + '</div><div style="font-size:10px;color:var(--muted)">kJ (' + kWh.toFixed(2) + ' kWh)</div></div>'
     +   '<div style="' + tileCss + ';border-color:var(--brand-blue);border-width:2px"><div style="' + labCss + '">Temp Drop in ' + mins + ' min</div><div style="' + valCss + '">' + drop.toFixed(2) + '</div><div style="font-size:10px;color:var(--muted)">\u00b0C \u00b7 ' + waterKg.toFixed(0) + ' kg contents</div></div>'
     + '</div>'
     + '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:12px">'
-    +   'Split at design \u0394T: pipework <strong>' + d.pipeW.toFixed(0) + ' W</strong>'
-    +   ' \u00b7 valve jackets <strong>' + d.valveW.toFixed(0) + ' W</strong>'
-    +   ' \u00b7 flange covers <strong>' + d.flangeW.toFixed(0) + ' W</strong>'
+    +   'Split at design \u0394T: pipework <strong>' + Math.abs(d.pipeW).toFixed(0) + ' W</strong>'
+    +   ' \u00b7 valve jackets <strong>' + Math.abs(d.valveW).toFixed(0) + ' W</strong>'
+    +   ' \u00b7 flange covers <strong>' + Math.abs(d.flangeW).toFixed(0) + ' W</strong>'
     + '</div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     +   '<thead><tr style="background:var(--brand-blue-dark);color:var(--white)">'
     +     '<th style="text-align:left;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">\u0394T</th>'
-    +     '<th style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">Loss W</th>'
+    +     '<th style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase"' + '>' + lossWordCap() + ' W</th>'
     +     '<th style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">kW</th>'
     +     '<th style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">kJ / ' + mins + ' min</th>'
     +     '<th style="text-align:right;padding:6px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase">\u00b0C drop</th>'
@@ -3539,6 +3787,19 @@ function renderCircuits() {
       + '<td class="derived-cell" data-label="Pipe Loss (kPa)">' + pipeLossText + '</td>'
       + '<td class="derived-cell" data-label="Total Loss">' + totalLossText + '</td>'
       + '<td class="derived-cell" data-label="Weight &amp; Volume">' + weightText + '</td>'
+      + '<td data-label="Bypass"><div style="display:flex;flex-direction:column;gap:3px;align-items:center">'
+      +   '<input type="checkbox" ' + (c.isBypass ? 'checked' : '') + ' onchange="toggleBypass(' + c.id + ',this.checked)" style="width:17px;height:17px;accent-color:var(--brand-blue);cursor:pointer">'
+      +   (c.isBypass
+            ? '<div style="display:flex;gap:2px;align-items:center">'
+              + '<input type="number" value="' + (c.bypassValue === '' ? '' : c.bypassValue) + '" step="5" min="0" placeholder="' + (c.bypassMode === 'lps' ? (calculateCircuit(c).vflow_ls || 0).toFixed(2) : '100') + '" onchange="updateCircuitField(' + c.id + ',\'bypassValue\',this.value)" style="width:52px;font-size:11px;padding:3px 4px">'
+              + '<select onchange="updateCircuitField(' + c.id + ',\'bypassMode\',this.value)" style="font-size:10px;padding:3px 2px">'
+              +   '<option value="pct"' + (c.bypassMode !== 'lps' ? ' selected' : '') + '>%</option>'
+              +   '<option value="lps"' + (c.bypassMode === 'lps' ? ' selected' : '') + '>l/s</option>'
+              + '</select></div>'
+              + '<div style="font-size:9px;color:var(--brand-blue-deep);font-weight:700">' + bypassFlowLps(c).toFixed(2) + ' l/s</div>'
+            : '')
+      + '</div></td>'
+      + '<td class="td-thermal" data-label="Ambient \u00b0C"><input type="number" value="' + (c.ambient === '' || c.ambient === undefined ? '' : c.ambient) + '" step="1" placeholder="' + getAmbientTemp() + '" title="Blank = project ambient" onchange="updateCircuitField(' + c.id + ',\'ambient\',this.value)"></td>'
       + '<td class="td-thermal" data-label="Valves"><input type="number" value="' + effectiveValveCount(c) + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'valveCount\',this.value); markValveOverride(' + c.id + ')">'
       +   '<div style="font-size:9px;font-weight:700;letter-spacing:0.5px;margin-top:2px;color:' + (c.valveAuto !== false ? 'var(--brand-blue-deep)' : '#c28a00') + '">' + (c.valveAuto !== false ? 'AUTO' : 'OVERRIDE') + '</div></td>'
       + '<td class="td-thermal" data-label="Flanges"><input type="number" value="' + effectiveFlangeCount(c) + '" step="1" min="0" onchange="updateCircuitField(' + c.id + ',\'flangeCount\',this.value); markFlangeOverride(' + c.id + ')">'
@@ -3580,6 +3841,7 @@ function renderCircuits() {
   document.body.classList.toggle('thermal-on', thermalEnabled());
   renderLengthPrompt();
   renderTopologySummary();
+  renderPlantVolumes();
   renderThermalSummary();
   renderPlantSummary();
   document.getElementById('t-maxloss').textContent = indexLoss_kPa.toFixed(1);
@@ -4364,7 +4626,7 @@ function showToast(msg) {
    or open them on another device. Unlike browser storage they are
    never purged and are not tied to one machine.
    ============================================================ */
-const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor", "insType", "insLambda", "surfaceFinish", "fluidTemp", "ambientTemp", "dwellMins", "flangeFactor", "targetTemp", "diversityFactor", "plantMargin", "plantOutput", "recoverFrom", "recoverTo", "plantDT", "returnTemp", "shutdownScenario", "customStartTemp", "rollupTol"];
+const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor", "insType", "insLambda", "surfaceFinish", "fluidTemp", "ambientTemp", "dwellMins", "flangeFactor", "targetTemp", "diversityFactor", "plantMargin", "plantOutput", "recoverFrom", "recoverTo", "plantDT", "returnTemp", "shutdownScenario", "customStartTemp", "rollupTol", "systemPreset"];
 
 function buildProjectSnapshot() {
   const settings = {};
@@ -4382,6 +4644,8 @@ function buildProjectSnapshot() {
     savedAt: new Date().toISOString(),
     circuits: circuits,
     nextId: nextId,
+    plantItems: plantItems,
+    nextPlantId: nextPlantId,
     settings: settings,
   };
 }
@@ -4465,6 +4729,8 @@ function handleProjectFile(evt) {
       length: 20, fittings: 20, isIndex: false, consumerLoad: 0, isLLH: false, sizeOverride: 0,
     }, cc)));
     nextId = data.nextId || (circuits.length + 1);
+    plantItems = Array.isArray(data.plantItems) ? data.plantItems : [];
+    nextPlantId = data.nextPlantId || (plantItems.length + 1);
     if (typeof onGlycolChange === 'function') onGlycolChange();
     renderCircuits();
     saveToLocalStorage();
@@ -4493,6 +4759,8 @@ function saveToLocalStorage() {
       calcDate: document.getElementById('calcDate').value,
       returnTemp: document.getElementById('returnTemp').value,
       autoProps: document.getElementById('autoProps').checked,
+      plantItems: plantItems,
+      nextPlantId: nextPlantId,
       thermal: {
         enabled: document.getElementById('thermalEnabled').checked,
         insType: document.getElementById('insType').value,
@@ -4541,6 +4809,7 @@ function loadFromLocalStorage() {
     if (s.calcDate) document.getElementById('calcDate').value = s.calcDate;
     if (s.returnTemp) document.getElementById('returnTemp').value = s.returnTemp;
     if (s.autoProps !== undefined) document.getElementById('autoProps').checked = !!s.autoProps;
+    if (Array.isArray(s.plantItems)) { plantItems = s.plantItems; nextPlantId = s.nextPlantId || (plantItems.length + 1); }
     if (s.thermal) {
       const t = s.thermal;
       if (t.enabled !== undefined) document.getElementById('thermalEnabled').checked = !!t.enabled;
