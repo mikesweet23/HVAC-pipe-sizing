@@ -5,7 +5,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
-<title>Pipework Size - Pumps and Losses — Multi-Circuit</title>
+<title>Pipework Sizer — Multi-Circuit</title>
 
 <!-- iOS home-screen app: launches fullscreen with no Safari chrome -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1142,82 +1142,6 @@
     </div>
   </div>
 
-  <!-- Thermal / Heat Loss -->
-  <div class="card" id="thermalCard" style="margin-bottom:24px">
-    <div class="card-title">
-      Thermal Performance &amp; Heat Loss
-      <span class="hint">BS EN ISO 12241 · thicknesses to BS 5422:2023</span>
-    </div>
-
-    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:16px">
-      <input type="checkbox" id="thermalEnabled" onchange="onThermalToggle(); renderCircuits();"
-             style="width:18px;height:18px;accent-color:var(--brand-blue);cursor:pointer;flex-shrink:0">
-      <span style="font-size:14px;font-weight:600">Calculate heat loss and standing losses</span>
-    </label>
-
-    <div id="thermalSettings" style="display:none">
-      <div class="input-grid">
-        <div class="input-group">
-          <label>Insulation Type</label>
-          <select id="insType" onchange="onInsTypeChange()">
-            <option value="pir" selected>PIR rigid closed-cell (33 kg/m³)</option>
-            <option value="mineralWool">Mineral wool pipe section</option>
-            <option value="phenolic">Phenolic foam</option>
-            <option value="elastomeric">Elastomeric (nitrile rubber)</option>
-            <option value="cellGlass">Cellular glass</option>
-            <option value="none">Bare pipe (no insulation)</option>
-          </select>
-        </div>
-        <div class="input-group">
-          <label>Conductivity λ <span class="unit">W/m·K</span></label>
-          <input type="number" id="insLambda" value="0.025" step="0.001" min="0" oninput="renderCircuits()">
-        </div>
-        <div class="input-group">
-          <label>Surface Finish <span class="unit">project default</span></label>
-          <select id="surfaceFinish" onchange="renderCircuits()">
-            <option value="alu" selected>Bright aluminium cladding (low ε)</option>
-            <option value="foil">Foil facing only, unclad (low ε)</option>
-            <option value="pib">PIB / PVC cladding (high ε)</option>
-            <option value="steel">Painted or galvanised steel (high ε)</option>
-          </select>
-        </div>
-        <div class="input-group">
-          <label>Fluid Temperature <span class="unit">°C</span></label>
-          <input type="number" id="fluidTemp" value="80" step="5" oninput="renderCircuits()">
-        </div>
-        <div class="input-group">
-          <label>Ambient Temperature <span class="unit">°C</span></label>
-          <input type="number" id="ambientTemp" value="20" step="1" oninput="renderCircuits()">
-        </div>
-        <div class="input-group">
-          <label>Dwell Period <span class="unit">minutes</span></label>
-          <input type="number" id="dwellMins" value="10" step="5" min="0" oninput="renderCircuits()">
-        </div>
-        <div class="input-group">
-          <label>Flange Factor <span class="unit">× valve jacket</span></label>
-          <input type="number" id="flangeFactor" value="0.40" step="0.05" min="0" oninput="renderCircuits()">
-        </div>
-        <div class="input-group">
-          <label>Target Temperature <span class="unit">°C</span></label>
-          <input type="number" id="targetTemp" value="60" step="5" oninput="renderCircuits()"
-                 title="Time-to-target shows how long each circuit takes to fall to this temperature">
-        </div>
-      </div>
-
-      <div style="background:rgba(122,209,228,0.10);border-left:3px solid var(--brand-blue);border-radius:4px;padding:11px 14px;font-size:12.5px;line-height:1.55;color:var(--ink-soft);margin-top:14px">
-        <strong style="color:var(--brand-blue-deep)">Method:</strong>
-        Q/L = ΔT ÷ [ ln(Dₒ/Dᵢ)/(2πλ) + 1/(πDₒh) ]. Insulation thickness is taken from the adi schedule by
-        <strong>nearest pipe OD</strong> (154 mm → DN150 → 70 mm), overridable per line.
-        Valve jackets use the Dynoteq-derived W/K coefficients (DN25–DN150); values outside that range are
-        extrapolated and marked <span style="color:#c28a00;font-weight:700">est</span>.
-        Flange pairs default to <strong>0.40 ×</strong> the valve coefficient — adjust above once measured data is available.
-        λ is temperature-dependent; the default suits typical LPHW mean temperatures.
-      </div>
-
-      <div id="thermalSummary" style="margin-top:18px"></div>
-    </div>
-  </div>
-
   <!-- Circuits Table -->
   <div class="card circuits-card">
     <div class="card-title">
@@ -1352,6 +1276,82 @@
         <strong style="color:var(--ink)">Design Weight = (Pipe + Fluid) × (1 + uplift%).</strong>
         The uplift covers lagging/insulation, cladding, valves, flanges, brackets, and small fittings. Defaults to 20% &mdash; increase to 25–30% for plantrooms with dense fittings, or reduce to 10–15% for clean straight runs without insulation. Use the resulting figure for structural support load assessment, lifting plans, and roof load checks.
       </div>
+    </div>
+  </div>
+
+  <!-- Thermal / Heat Loss -->
+  <div class="card" id="thermalCard" style="margin-bottom:24px">
+    <div class="card-title">
+      Thermal Performance &amp; Heat Loss
+      <span class="hint">BS EN ISO 12241 · thicknesses to BS 5422:2023</span>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:16px">
+      <input type="checkbox" id="thermalEnabled" onchange="onThermalToggle(); renderCircuits();"
+             style="width:18px;height:18px;accent-color:var(--brand-blue);cursor:pointer;flex-shrink:0">
+      <span style="font-size:14px;font-weight:600">Calculate heat loss and standing losses</span>
+    </label>
+
+    <div id="thermalSettings" style="display:none">
+      <div class="input-grid">
+        <div class="input-group">
+          <label>Insulation Type</label>
+          <select id="insType" onchange="onInsTypeChange()">
+            <option value="pir" selected>PIR rigid closed-cell (33 kg/m³)</option>
+            <option value="mineralWool">Mineral wool pipe section</option>
+            <option value="phenolic">Phenolic foam</option>
+            <option value="elastomeric">Elastomeric (nitrile rubber)</option>
+            <option value="cellGlass">Cellular glass</option>
+            <option value="none">Bare pipe (no insulation)</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Conductivity λ <span class="unit">W/m·K</span></label>
+          <input type="number" id="insLambda" value="0.025" step="0.001" min="0" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Surface Finish <span class="unit">project default</span></label>
+          <select id="surfaceFinish" onchange="renderCircuits()">
+            <option value="alu" selected>Bright aluminium cladding (low ε)</option>
+            <option value="foil">Foil facing only, unclad (low ε)</option>
+            <option value="pib">PIB / PVC cladding (high ε)</option>
+            <option value="steel">Painted or galvanised steel (high ε)</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Fluid Temperature <span class="unit">°C</span></label>
+          <input type="number" id="fluidTemp" value="80" step="5" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Ambient Temperature <span class="unit">°C</span></label>
+          <input type="number" id="ambientTemp" value="20" step="1" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Dwell Period <span class="unit">minutes</span></label>
+          <input type="number" id="dwellMins" value="10" step="5" min="0" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Flange Factor <span class="unit">× valve jacket</span></label>
+          <input type="number" id="flangeFactor" value="0.40" step="0.05" min="0" oninput="renderCircuits()">
+        </div>
+        <div class="input-group">
+          <label>Target Temperature <span class="unit">°C</span></label>
+          <input type="number" id="targetTemp" value="60" step="5" oninput="renderCircuits()"
+                 title="Time-to-target shows how long each circuit takes to fall to this temperature">
+        </div>
+      </div>
+
+      <div style="background:rgba(122,209,228,0.10);border-left:3px solid var(--brand-blue);border-radius:4px;padding:11px 14px;font-size:12.5px;line-height:1.55;color:var(--ink-soft);margin-top:14px">
+        <strong style="color:var(--brand-blue-deep)">Method:</strong>
+        Q/L = ΔT ÷ [ ln(Dₒ/Dᵢ)/(2πλ) + 1/(πDₒh) ]. Insulation thickness is taken from the adi schedule by
+        <strong>nearest pipe OD</strong> (154 mm → DN150 → 70 mm), overridable per line.
+        Valve jackets use the Dynoteq-derived W/K coefficients (DN25–DN150); values outside that range are
+        extrapolated and marked <span style="color:#c28a00;font-weight:700">est</span>.
+        Flange pairs default to <strong>0.40 ×</strong> the valve coefficient — adjust above once measured data is available.
+        λ is temperature-dependent; the default suits typical LPHW mean temperatures.
+      </div>
+
+      <div id="thermalSummary" style="margin-top:18px"></div>
     </div>
   </div>
 
