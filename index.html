@@ -5,7 +5,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
-<title>Pipework Sizer — Multi-Circuit</title>
+<title>Pipework Size - Pumps and Losses — Multi-Circuit</title>
 
 <!-- iOS home-screen app: launches fullscreen with no Safari chrome -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1513,14 +1513,24 @@
         <input type="number" id="plantMargin" value="10" step="5" min="0" max="50" oninput="renderCircuits()">
       </div>
       <div class="input-group">
-        <label>Plant Output <span class="unit">kW · for recovery</span></label>
-        <input type="number" id="plantOutput" value="150" step="10" min="0" oninput="renderCircuits()"
-               title="Available boiler / CHP output used to calculate recovery time">
+        <label>Plant Output <span class="unit">kW · blank = calculated duty</span></label>
+        <input type="number" id="plantOutput" value="" step="10" min="0" oninput="renderCircuits()"
+               placeholder="—" title="Actual installed boiler / CHP output. Leave blank to use the calculated plant duty above.">
       </div>
       <div class="input-group">
         <label>Recover From <span class="unit">°C</span></label>
         <input type="number" id="recoverFrom" value="60" step="5" oninput="renderCircuits()"
                title="Starting temperature for the recovery calculation">
+      </div>
+      <div class="input-group">
+        <label>Recover To <span class="unit">°C · blank = flow temp</span></label>
+        <input type="number" id="recoverTo" value="" step="5" placeholder="—" oninput="renderCircuits()"
+               title="Target temperature. Leave blank to use the design flow temperature from the thermal panel.">
+      </div>
+      <div class="input-group">
+        <label>Max ΔT Across Plant <span class="unit">K</span></label>
+        <input type="number" id="plantDT" value="20" step="5" min="1" oninput="renderCircuits()"
+               title="Largest temperature rise the boiler/CHP can achieve in one pass. Caps how much heat the circulating flow can carry.">
       </div>
     </div>
 
@@ -2436,8 +2446,41 @@ function calculateCircuit(c) {
    ============================================================ */
 function getDiversity()   { const v = parseFloat((document.getElementById('diversityFactor')||{}).value); return isNaN(v) ? 100 : Math.min(100, Math.max(10, v)); }
 function getPlantMargin() { const v = parseFloat((document.getElementById('plantMargin')||{}).value);     return isNaN(v) ? 10 : Math.min(50, Math.max(0, v)); }
-function getPlantOutput() { const v = parseFloat((document.getElementById('plantOutput')||{}).value);     return isNaN(v) ? 0 : Math.max(0, v); }
+function getPlantOutput() { const v = parseFloat((document.getElementById('plantOutput')||{}).value);     return isNaN(v) ? null : Math.max(0, v); }
 function getRecoverFrom() { const v = parseFloat((document.getElementById('recoverFrom')||{}).value);     return isNaN(v) ? 60 : v; }
+function getRecoverTo()   { const v = parseFloat((document.getElementById('recoverTo')||{}).value);       return isNaN(v) ? getFluidTemp() : v; }
+function getPlantDT()     { const v = parseFloat((document.getElementById('plantDT')||{}).value);         return isNaN(v) ? 20 : Math.max(1, v); }
+
+// System (main-line) flow: the largest flow among the ticked index circuits.
+function systemFlowLps() {
+  let f = 0;
+  circuits.forEach(c => {
+    if (!c.isIndex) return;
+    const r = calculateCircuit(c);
+    if (!r.error && r.vflow_ls > f) f = r.vflow_ls;
+  });
+  return f;
+}
+
+// Heat the circulating flow can physically carry: Q = mdot * cp * dT_plant
+function flowLimitedKw() {
+  const lps = systemFlowLps();
+  const rho = parseFloat(document.getElementById('rho').value) || 999;
+  const cp  = parseFloat(document.getElementById('cp').value) || 4.182;
+  return (lps * rho / 1000) * cp * getPlantDT();
+}
+
+// One complete pass of the system contents through the plant, in seconds
+function turnoverSeconds() {
+  const lps = systemFlowLps();
+  if (lps <= 0) return null;
+  let litres = 0;
+  circuits.forEach(c => {
+    const r = calculateCircuit(c);
+    if (!r.error && r.recommended) litres += r.weights.water_l_total;
+  });
+  return litres / lps;
+}
 
 // Consumer duty = rows carrying a consumer load (kPa), i.e. terminals
 function consumerDutyKw() {
@@ -2511,18 +2554,57 @@ function renderPlantSummary() {
 
   // Recovery
   const massKg = systemWaterKg();
-  const rFrom = getRecoverFrom(), rTo = getFluidTemp();
-  const rHrs = recoveryHours(rFrom, rTo, getPlantOutput(), ua, massKg);
+  const rFrom = getRecoverFrom(), rTo = getRecoverTo();
+  const entered = getPlantOutput();
+  const usingCalc = (entered === null);
+  const nominalKw = usingCalc ? duty : entered;   // blank field = use the duty just calculated
+  const outEl = document.getElementById('plantOutput');
+  if (outEl) outEl.placeholder = duty.toFixed(0);
+  const toEl = document.getElementById('recoverTo');
+  if (toEl) toEl.placeholder = getFluidTemp().toFixed(0);
+
+  // Flow limits: the circulating flow can only carry mdot*cp*dT_plant, and the
+  // contents must physically pass the plant at least once.
+  const flowKw = flowLimitedKw();
+  const isFlowLimited = flowKw > 0 && nominalKw > flowKw;
+  const effKw = isFlowLimited ? flowKw : nominalKw;
+  const turnS = turnoverSeconds();
+
+  const rHrs = recoveryHours(rFrom, rTo, effKw, ua, massKg);
+  const turnLimited = (rHrs !== null && turnS !== null && rHrs * 3600 < turnS);
+
   let recText;
-  if (getPlantOutput() <= 0)      recText = 'Enter a plant output above to calculate recovery time.';
+  if (effKw <= 0)                 recText = 'No plant duty yet \u2014 add circuits with a consumer load.';
   else if (rTo <= rFrom)          recText = 'Recovery target must be above the starting temperature.';
-  else if (rHrs === null)         recText = '<span style="color:#c74418">' + getPlantOutput().toFixed(0) + ' kW cannot reach ' + rTo.toFixed(0) + ' \u00b0C \u2014 losses match the output first.</span>';
+  else if (rHrs === null)         recText = '<span style="color:#c74418">' + effKw.toFixed(0) + ' kW cannot reach ' + rTo.toFixed(0) + ' \u00b0C \u2014 the standing loss matches the output before it gets there.</span>';
   else {
-    const mins = rHrs * 60;
+    const shown = turnLimited ? (turnS / 60) : (rHrs * 60);
     recText = 'From <strong>' + rFrom.toFixed(0) + ' \u00b0C</strong> to <strong>' + rTo.toFixed(0) + ' \u00b0C</strong> with <strong>'
-            + getPlantOutput().toFixed(0) + ' kW</strong> takes <strong>'
-            + (mins < 90 ? mins.toFixed(0) + ' minutes' : rHrs.toFixed(1) + ' hours')
-            + '</strong> (' + massKg.toFixed(0) + ' kg of system contents).';
+            + effKw.toFixed(0) + ' kW</strong>'
+            + (isFlowLimited ? ' <span style="color:#c28a00;font-weight:700">(flow-limited)</span>'
+                             : (usingCalc ? ' <span style="color:var(--muted)">(calculated duty)</span>' : ' <span style="color:var(--muted)">(as entered)</span>'))
+            + ' takes <strong>'
+            + (shown < 90 ? shown.toFixed(0) + ' minutes' : (shown/60).toFixed(1) + ' hours')
+            + '</strong> for ' + massKg.toFixed(0) + ' kg of system contents.';
+    if (isFlowLimited) {
+      recText += '<div style="font-size:11.5px;color:#8a6100;margin-top:6px">'
+        + 'At ' + systemFlowLps().toFixed(2) + ' l/s with a ' + getPlantDT().toFixed(0) + ' K rise across the plant, the circulating flow can only carry <strong>'
+        + flowKw.toFixed(0) + ' kW</strong> \u2014 less than the ' + nominalKw.toFixed(0) + ' kW available. '
+        + 'Raise the flow or the plant \u0394T to use the full output.</div>';
+    }
+    if (turnLimited) {
+      recText += '<div style="font-size:11.5px;color:#8a6100;margin-top:6px">'
+        + 'Circulation-limited: one complete pass of the contents past the plant takes <strong>' + (turnS/60).toFixed(1) + ' minutes</strong>, '
+        + 'so heat cannot reach all the water faster than that. The energy balance alone would give ' + (rHrs*60).toFixed(1) + ' minutes.</div>';
+    }
+    if (usingCalc && !isFlowLimited) {
+      recText += '<div style="font-size:11px;color:var(--muted);margin-top:4px">Enter your actual installed plant output above to override this.</div>';
+    }
+  }
+  if (turnS !== null && effKw > 0) {
+    recText += '<div style="font-size:11px;color:var(--muted);margin-top:6px">'
+      + 'System flow ' + systemFlowLps().toFixed(2) + ' l/s \u00b7 one turnover ' + (turnS/60).toFixed(1) + ' min \u00b7 '
+      + 'flow can carry ' + flowKw.toFixed(0) + ' kW at \u0394T ' + getPlantDT().toFixed(0) + ' K</div>';
   }
 
   el.innerHTML =
@@ -2646,9 +2728,25 @@ function buildCascadeHTML() {
     +     '<th ' + th + '>Size</th><th ' + th + '>Length m</th><th ' + th + '>Flow l/s</th>'
     +     '<th ' + th + '>T in \u00b0C</th><th ' + th + '>T out \u00b0C</th><th ' + th + '>Drop K</th><th ' + th + '>Loss kW</th>'
     +   '</tr></thead><tbody>' + rows + '</tbody></table>'
-    + '<div style="background:rgba(122,209,228,0.12);border-left:3px solid var(--brand-blue);padding:9px 12px;margin-top:8px;font-size:12.5px">'
-    +   'Delivered at the index terminal: <strong>' + cas.Tend.toFixed(2) + ' \u00b0C</strong>'
-    +   ' \u2014 a total drop of <strong>' + cas.totalDrop.toFixed(3) + ' K</strong> from ' + cas.Tstart.toFixed(1) + ' \u00b0C at the plant.'
+    + (function () {
+        let idxKw = 0;
+        cas.segs.forEach(s => { idxKw += s.Q; });
+        idxKw /= 1000;
+        const lastConsumer = [...cas.segs].reverse().find(s => s.hasConsumer);
+        const tileCss = 'background:var(--white);border:1px solid var(--line-strong);border-radius:4px;padding:12px 14px;text-align:center';
+        const labCss  = "font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)";
+        const valCss  = 'font-size:20px;font-weight:800;color:var(--brand-blue-deep);margin:2px 0';
+        return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px">'
+          + '<div style="' + tileCss + '"><div style="' + labCss + '">Index Run Loss</div><div style="' + valCss + '">' + idxKw.toFixed(3) + '</div><div style="font-size:10px;color:var(--muted)">kW along the path</div></div>'
+          + '<div style="' + tileCss + '"><div style="' + labCss + '">Total Drop</div><div style="' + valCss + '">' + cas.totalDrop.toFixed(3) + '</div><div style="font-size:10px;color:var(--muted)">K \u00b7 plant to terminal</div></div>'
+          + '<div style="' + tileCss + ';border-color:var(--brand-blue);border-width:2px"><div style="' + labCss + '">At Last Consumer</div><div style="' + valCss + '">'
+          + (lastConsumer ? lastConsumer.Tout.toFixed(2) : cas.Tend.toFixed(2)) + '</div><div style="font-size:10px;color:var(--muted)">\u00b0C \u00b7 '
+          + (lastConsumer ? escHtml(lastConsumer.ref) : 'end of run') + '</div></div>'
+          + '</div>';
+      })()
+    + '<div style="background:rgba(122,209,228,0.12);border-left:3px solid var(--brand-blue);padding:9px 12px;margin-top:10px;font-size:12.5px">'
+    +   'Water leaves the plant at <strong>' + cas.Tstart.toFixed(1) + ' \u00b0C</strong> and arrives at the index terminal at <strong>' + cas.Tend.toFixed(2) + ' \u00b0C</strong>'
+    +   ' \u2014 a distribution loss of <strong>' + cas.totalDrop.toFixed(3) + ' K</strong> along the path.'
     + '</div>'
     + '<div style="font-size:11px;color:var(--muted);margin-top:6px">Segments are taken in list order \u2014 use the \u25b2\u25bc buttons so the ticked rows run plant to terminal. Drop is inversely proportional to flow, so it grows at part load.</div>';
 }
@@ -3584,7 +3682,13 @@ function exportPDFReport() {
   const _consPct = _sub > 0 ? _diversified / _sub * 100 : 0;
   const _lossPct = _sub > 0 ? _lossKw / _sub * 100 : 0;
   const _mass = systemWaterKg();
-  const _rHrs = recoveryHours(getRecoverFrom(), getFluidTemp(), getPlantOutput(), _ua, _mass);
+  const _entered = getPlantOutput();
+  const _plantKw = (_entered === null) ? _duty : _entered;
+  const _flowKw = flowLimitedKw();
+  const _effKw = (_flowKw > 0 && _plantKw > _flowKw) ? _flowKw : _plantKw;
+  const _turnS = turnoverSeconds();
+  const _rHrs = recoveryHours(getRecoverFrom(), getRecoverTo(), _effKw, _ua, _mass);
+  const _turnLim = (_rHrs !== null && _turnS !== null && _rHrs*3600 < _turnS);
 
   let plantSection = '<h2>5. Plant Duty</h2>'
     + '<p>Plant duty is built up from the connected consumer load, adjusted for diversity, plus the continuous distribution standing loss and a selection margin. '
@@ -3599,10 +3703,15 @@ function exportPDFReport() {
     + '</tbody></table>'
     + (_sub > 0 ? '<p>Load split: useful consumer duty <strong>' + _consPct.toFixed(1) + '%</strong>, parasitic distribution loss <strong>' + _lossPct.toFixed(1) + '%</strong>. '
         + 'Note the standing loss is continuous whenever the system is hot, whereas the consumer load is intermittent \u2014 so its share of annual energy is higher than its share of duty.</p>' : '')
-    + (getPlantOutput() > 0 && _rHrs !== null
-        ? '<p><strong>Recovery:</strong> with ' + getPlantOutput().toFixed(0) + ' kW available, raising the ' + _mass.toFixed(0)
-          + ' kg of system contents from ' + getRecoverFrom().toFixed(0) + ' \u00b0C to ' + getFluidTemp().toFixed(0) + ' \u00b0C takes approximately <strong>'
-          + (_rHrs * 60 < 90 ? (_rHrs * 60).toFixed(0) + ' minutes' : _rHrs.toFixed(1) + ' hours') + '</strong>.</p>'
+    + (_effKw > 0 && _rHrs !== null
+        ? '<p><strong>Recovery:</strong> with ' + _effKw.toFixed(0) + ' kW'
+          + ((_flowKw > 0 && _plantKw > _flowKw) ? ' (flow-limited from ' + _plantKw.toFixed(0) + ' kW)' : '')
+          + ', raising the ' + _mass.toFixed(0)
+          + ' kg of system contents from ' + getRecoverFrom().toFixed(0) + ' \u00b0C to ' + getRecoverTo().toFixed(0) + ' \u00b0C takes approximately <strong>'
+          + (_turnLim ? (_turnS/60).toFixed(1) + ' minutes' : (_rHrs * 60 < 90 ? (_rHrs * 60).toFixed(0) + ' minutes' : _rHrs.toFixed(1) + ' hours')) + '</strong>. '
+          + 'At ' + systemFlowLps().toFixed(2) + ' l/s the circulating flow can carry ' + _flowKw.toFixed(0) + ' kW at a ' + getPlantDT().toFixed(0) + ' K rise across the plant, '
+          + 'and one complete pass of the contents takes ' + (_turnS === null ? 'n/a' : (_turnS/60).toFixed(1) + ' minutes') + '.'
+          + (_turnLim ? ' Recovery is circulation-limited rather than output-limited.' : '') + '</p>'
         : '');
 
   const filledKg = totalPipeKg + totalWaterKg;
@@ -3694,7 +3803,7 @@ function showToast(msg) {
    or open them on another device. Unlike browser storage they are
    never purged and are not tied to one machine.
    ============================================================ */
-const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor", "insType", "insLambda", "surfaceFinish", "fluidTemp", "ambientTemp", "dwellMins", "flangeFactor", "targetTemp", "diversityFactor", "plantMargin", "plantOutput", "recoverFrom"];
+const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor", "insType", "insLambda", "surfaceFinish", "fluidTemp", "ambientTemp", "dwellMins", "flangeFactor", "targetTemp", "diversityFactor", "plantMargin", "plantOutput", "recoverFrom", "recoverTo", "plantDT"];
 
 function buildProjectSnapshot() {
   const settings = {};
@@ -3837,6 +3946,8 @@ function saveToLocalStorage() {
         plantMargin: document.getElementById('plantMargin').value,
         plantOutput: document.getElementById('plantOutput').value,
         recoverFrom: document.getElementById('recoverFrom').value,
+        recoverTo: document.getElementById('recoverTo').value,
+        plantDT: document.getElementById('plantDT').value,
       },
     };
     localStorage.setItem('adi_pipesizer_v2', JSON.stringify(state));
@@ -3882,6 +3993,8 @@ function loadFromLocalStorage() {
       if (pl.plantMargin !== undefined) document.getElementById('plantMargin').value = pl.plantMargin;
       if (pl.plantOutput !== undefined) document.getElementById('plantOutput').value = pl.plantOutput;
       if (pl.recoverFrom) document.getElementById('recoverFrom').value = pl.recoverFrom;
+      if (pl.recoverTo !== undefined) document.getElementById('recoverTo').value = pl.recoverTo;
+      if (pl.plantDT) document.getElementById('plantDT').value = pl.plantDT;
     }
     return true;
   } catch (e) { return false; }
