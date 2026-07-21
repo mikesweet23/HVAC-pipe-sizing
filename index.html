@@ -1495,6 +1495,38 @@
     </div>
   </div>
 
+  <!-- Plant Duty & Recovery -->
+  <div class="card" id="plantPanel" style="margin-bottom:24px">
+    <div class="card-title">
+      Plant Duty &amp; Recovery
+      <span class="hint">consumer load, distribution losses and margin</span>
+    </div>
+
+    <div class="input-grid">
+      <div class="input-group">
+        <label>Diversity / Simultaneity <span class="unit">%</span></label>
+        <input type="number" id="diversityFactor" value="100" step="5" min="10" max="100" oninput="renderCircuits()"
+               title="Proportion of consumer load drawing at the same instant. 100% = no diversity.">
+      </div>
+      <div class="input-group">
+        <label>Plant Margin <span class="unit">%</span></label>
+        <input type="number" id="plantMargin" value="10" step="5" min="0" max="50" oninput="renderCircuits()">
+      </div>
+      <div class="input-group">
+        <label>Plant Output <span class="unit">kW · for recovery</span></label>
+        <input type="number" id="plantOutput" value="150" step="10" min="0" oninput="renderCircuits()"
+               title="Available boiler / CHP output used to calculate recovery time">
+      </div>
+      <div class="input-group">
+        <label>Recover From <span class="unit">°C</span></label>
+        <input type="number" id="recoverFrom" value="60" step="5" oninput="renderCircuits()"
+               title="Starting temperature for the recovery calculation">
+      </div>
+    </div>
+
+    <div id="plantSummary" style="margin-top:18px"></div>
+  </div>
+
 </main>
 
 <footer>
@@ -2393,6 +2425,130 @@ function calculateCircuit(c) {
 }
 
 /* ============ RENDER CIRCUITS ============ */
+/* ============================================================
+   PLANT DUTY & RECOVERY
+   Plant duty = diversified consumer load + distribution standing
+   loss + margin. Recovery solves the heat-up ODE
+     m*cp*dT/dt = Q_plant - UA*(T - T_amb)
+   giving T(t) = T_amb + Q/UA + (T0 - T_amb - Q/UA)*exp(-t*UA/(m*cp)).
+   With plant output far exceeding the losses this is near-linear,
+   but the exact form is used so it stays right at low output.
+   ============================================================ */
+function getDiversity()   { const v = parseFloat((document.getElementById('diversityFactor')||{}).value); return isNaN(v) ? 100 : Math.min(100, Math.max(10, v)); }
+function getPlantMargin() { const v = parseFloat((document.getElementById('plantMargin')||{}).value);     return isNaN(v) ? 10 : Math.min(50, Math.max(0, v)); }
+function getPlantOutput() { const v = parseFloat((document.getElementById('plantOutput')||{}).value);     return isNaN(v) ? 0 : Math.max(0, v); }
+function getRecoverFrom() { const v = parseFloat((document.getElementById('recoverFrom')||{}).value);     return isNaN(v) ? 60 : v; }
+
+// Consumer duty = rows carrying a consumer load (kPa), i.e. terminals
+function consumerDutyKw() {
+  let kw = 0, n = 0;
+  circuits.forEach(c => {
+    if ((parseFloat(c.consumerLoad) || 0) <= 0) return;
+    const r = calculateCircuit(c);
+    if (r.error) return;
+    kw += r.kw; n++;
+  });
+  return { kw, count: n };
+}
+
+// Total system water mass, independent of the thermal module
+function systemWaterKg() {
+  let m = 0;
+  circuits.forEach(c => {
+    const r = calculateCircuit(c);
+    if (!r.error && r.recommended) m += r.weights.water_kg_total;
+  });
+  return m;
+}
+
+// Hours to raise the system from T0 to T1 with a given plant output
+function recoveryHours(T0, T1, plantKw, ua, massKg) {
+  const cp = (parseFloat(document.getElementById('cp').value) || 4.182) * 1000;
+  const Q = plantKw * 1000;
+  if (Q <= 0 || massKg <= 0 || T1 <= T0) return null;
+  const Tamb = getAmbientTemp();
+  if (ua <= 0) return massKg * cp * (T1 - T0) / Q / 3600;   // no losses
+  const Tss = Tamb + Q / ua;                                 // steady-state ceiling
+  if (T1 >= Tss) return null;                                // plant can never get there
+  const tau = massKg * cp / ua;
+  return -tau * Math.log((T1 - Tss) / (T0 - Tss)) / 3600;
+}
+
+function renderPlantSummary() {
+  const el = document.getElementById('plantSummary');
+  if (!el) return;
+
+  const cons = consumerDutyKw();
+  const div = getDiversity();
+  const diversified = cons.kw * div / 100;
+
+  const thermalOn = thermalEnabled();
+  const designDT = getFluidTemp() - getAmbientTemp();
+  const base = thermalOn ? systemHeatLoss(1) : null;
+  const lossKw = thermalOn ? (base.totalW * designDT / 1000) : 0;
+  const ua = thermalOn ? base.totalW : 0;   // systemHeatLoss(1) totalW IS the UA in W/K
+
+  const subtotal = diversified + lossKw;
+  const margin = getPlantMargin();
+  const duty = subtotal * (1 + margin / 100);
+
+  const consPct = subtotal > 0 ? diversified / subtotal * 100 : 0;
+  const lossPct = subtotal > 0 ? lossKw / subtotal * 100 : 0;
+
+  const tileCss = 'background:var(--white);border:1px solid var(--line-strong);border-radius:4px;padding:12px 14px;text-align:center';
+  const labCss  = "font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)";
+  const valCss  = 'font-size:22px;font-weight:800;color:var(--brand-blue-deep);margin:2px 0';
+
+  // Build-up table
+  let rows = ''
+    + '<tr><td>Consumer load (' + cons.count + ' terminal' + (cons.count === 1 ? '' : 's') + ')</td><td class="num">' + cons.kw.toFixed(1) + ' kW</td></tr>'
+    + (div !== 100
+        ? '<tr><td>Diversity applied (' + div + '%)</td><td class="num">' + diversified.toFixed(1) + ' kW</td></tr>'
+        : '<tr><td style="color:var(--muted)">No diversity applied (100%)</td><td class="num" style="color:var(--muted)">' + diversified.toFixed(1) + ' kW</td></tr>')
+    + '<tr><td>Distribution standing loss</td><td class="num">' + (thermalOn ? '+ ' + lossKw.toFixed(2) + ' kW' : '<span style="color:var(--muted)">not calculated</span>') + '</td></tr>'
+    + '<tr style="border-top:2px solid var(--brand-blue-dark);font-weight:700"><td>Sub-total</td><td class="num">' + subtotal.toFixed(1) + ' kW</td></tr>'
+    + '<tr><td>Margin (+' + margin + '%)</td><td class="num">+ ' + (duty - subtotal).toFixed(1) + ' kW</td></tr>';
+
+  // Recovery
+  const massKg = systemWaterKg();
+  const rFrom = getRecoverFrom(), rTo = getFluidTemp();
+  const rHrs = recoveryHours(rFrom, rTo, getPlantOutput(), ua, massKg);
+  let recText;
+  if (getPlantOutput() <= 0)      recText = 'Enter a plant output above to calculate recovery time.';
+  else if (rTo <= rFrom)          recText = 'Recovery target must be above the starting temperature.';
+  else if (rHrs === null)         recText = '<span style="color:#c74418">' + getPlantOutput().toFixed(0) + ' kW cannot reach ' + rTo.toFixed(0) + ' \u00b0C \u2014 losses match the output first.</span>';
+  else {
+    const mins = rHrs * 60;
+    recText = 'From <strong>' + rFrom.toFixed(0) + ' \u00b0C</strong> to <strong>' + rTo.toFixed(0) + ' \u00b0C</strong> with <strong>'
+            + getPlantOutput().toFixed(0) + ' kW</strong> takes <strong>'
+            + (mins < 90 ? mins.toFixed(0) + ' minutes' : rHrs.toFixed(1) + ' hours')
+            + '</strong> (' + massKg.toFixed(0) + ' kg of system contents).';
+  }
+
+  el.innerHTML =
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
+    +   '<div style="' + tileCss + '"><div style="' + labCss + '">Consumer Load</div><div style="' + valCss + '">' + cons.kw.toFixed(1) + '</div><div style="font-size:10px;color:var(--muted)">kW \u00b7 ' + cons.count + ' terminals</div></div>'
+    +   '<div style="' + tileCss + '"><div style="' + labCss + '">Standing Loss</div><div style="' + valCss + '">' + (thermalOn ? lossKw.toFixed(2) : '\u2014') + '</div><div style="font-size:10px;color:var(--muted)">kW \u00b7 distribution</div></div>'
+    +   '<div style="' + tileCss + ';border-color:var(--brand-blue);border-width:2px"><div style="' + labCss + '">Plant Duty</div><div style="' + valCss + '">' + duty.toFixed(1) + '</div><div style="font-size:10px;color:var(--muted)">kW \u00b7 incl. ' + margin + '% margin</div></div>'
+    + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:12px">'
+    +   '<tbody>' + rows
+    +   '<tr style="border-top:2px solid var(--brand-blue-dark);background:rgba(122,209,228,0.15);font-weight:800">'
+    +     '<td style="padding:8px">Plant / CHP duty</td><td class="num" style="padding:8px;font-size:15px">' + duty.toFixed(1) + ' kW</td></tr>'
+    +   '</tbody></table>'
+    + (subtotal > 0
+        ? '<div style="margin-bottom:6px;font-size:12px;color:var(--ink-soft)">Load split \u2014 useful consumer duty <strong>' + consPct.toFixed(1) + '%</strong>, parasitic distribution loss <strong>' + lossPct.toFixed(1) + '%</strong></div>'
+          + '<div style="display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid var(--line-strong)">'
+          +   '<div style="width:' + consPct.toFixed(2) + '%;background:var(--brand-blue-deep)" title="Consumer load"></div>'
+          +   '<div style="width:' + lossPct.toFixed(2) + '%;background:#c28a00" title="Distribution loss"></div>'
+          + '</div>'
+        : '')
+    + '<div style="background:rgba(122,209,228,0.12);border-left:3px solid var(--brand-blue);padding:10px 13px;margin-top:14px;font-size:12.5px">'
+    +   '<strong style="color:var(--brand-blue-deep)">Recovery:</strong> ' + recText
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-top:8px">Consumer load sums circuits carrying a consumer load in kPa. Diversity is a judgement on how many terminals draw at once \u2014 100% means none applied. Standing loss is continuous whenever the system is hot, unlike the consumer load.</div>';
+}
+
 function renderThermalSummary() {
   const el = document.getElementById('thermalSummary');
   if (!el) return;
@@ -2771,6 +2927,7 @@ function renderCircuits() {
   document.getElementById('t-conskw').textContent  = consumerKw.toFixed(1);
   document.body.classList.toggle('thermal-on', thermalEnabled());
   renderThermalSummary();
+  renderPlantSummary();
   document.getElementById('t-maxloss').textContent = indexLoss_kPa.toFixed(1);
   document.getElementById('t-sumloss').textContent = sumLoss_kPa.toFixed(1);
   document.getElementById('circuitCountHint').textContent = circuits.length + ' circuit' + (circuits.length===1?'':'s');
@@ -3179,7 +3336,7 @@ function exportPDFReport() {
 
   // Pump
   const indexCircuits = circuits.filter(c => c.isIndex);
-  let pumpSection = '<h2>5. Pump Duty &amp; Index Run</h2><p><em>No circuits marked as index run \u2014 pump duty not calculated. Tick the Index box on the most onerous circuit(s) to size the pump.</em></p>';
+  let pumpSection = '<h2>6. Pump Duty &amp; Index Run</h2><p><em>No circuits marked as index run \u2014 pump duty not calculated. Tick the Index box on the most onerous circuit(s) to size the pump.</em></p>';
   if (indexCircuits.length > 0) {
     let idxPipe=0, idxLoad=0, idxLps=0, idxM3h=0;
     const idxRows = indexCircuits.map(c => {
@@ -3203,7 +3360,7 @@ function exportPDFReport() {
     const finalBar = finalKpa/100;
     const finalMH = (finalKpa*1000)/(rho*9.81);
     const names = indexCircuits.map(c=>c.ref).join(', ');
-    pumpSection = '<h2>5. Pump Duty &amp; Index Run</h2>'
+    pumpSection = '<h2>6. Pump Duty &amp; Index Run</h2>'
       + '<p>The index run comprises: <strong>'+escHtml(names)+'</strong>. This is the hydraulically most onerous path and governs pump selection. The design flow is the flow carried by the <strong>main line</strong> ('+idxLps.toFixed(2)+' l/s) \u2014 the largest flow along the index path \u2014 not the sum of the branches, since downstream circuits are fed from the main. The design head sums the index pipe friction and equipment losses (including the index terminal\u2019s consumer load), additional plant-side resistances, static head and a safety allowance.</p>'
       + '<table class="rpt"><thead><tr><th>Index Circuit</th><th class="n">Pipe Loss kPa</th><th class="n">Consumer kPa</th><th class="n">Total kPa</th></tr></thead><tbody>'+idxRows
       + '<tr class="sub"><td>Index run sub-total</td><td class="n">'+idxPipe.toFixed(2)+'</td><td class="n">'+idxLoad.toFixed(2)+'</td><td class="n">'+idxTotal.toFixed(2)+'</td></tr></tbody></table>'
@@ -3327,7 +3484,7 @@ function exportPDFReport() {
         + '<td class="n">'+(v.totalW*mins*60/1000).toFixed(0)+'</td><td class="n">'+dr.toFixed(2)+'</td></tr>';
     }
 
-    thermalSection = '<h2>7. Thermal Performance &amp; Standing Heat Loss</h2>'
+    thermalSection = '<h2>8. Thermal Performance &amp; Standing Heat Loss</h2>'
       + '<p>Heat loss is calculated to <strong>BS EN ISO 12241</strong> for steady-state cylindrical conduction through the insulation with an external surface film: '
       + 'Q/L = \u0394T \u00f7 [ ln(D\u2092/D\u1d62)/(2\u03c0\u03bb) + 1/(\u03c0D\u2092h\u209b\u2091) ]. Pipe wall and internal film resistances are negligible for metal pipe carrying water and are omitted. '
       + 'Insulation is <strong>'+escHtml(insLabel)+'</strong> at \u03bb = '+lam.toFixed(3)+' W/m\u00b7K, finished with <strong>'+escHtml(finLabel)+'</strong>. '
@@ -3412,6 +3569,42 @@ function exportPDFReport() {
       + 'Where the system remains interconnected with the pump off, the mixed-volume figures are more representative.</p>';
   }
 
+  // ===== Plant duty build-up =====
+  const _cons = consumerDutyKw();
+  const _div = getDiversity();
+  const _diversified = _cons.kw * _div / 100;
+  const _thermOn = thermalEnabled();
+  const _designDT = getFluidTemp() - getAmbientTemp();
+  const _base = _thermOn ? systemHeatLoss(1) : null;
+  const _lossKw = _thermOn ? (_base.totalW * _designDT / 1000) : 0;
+  const _ua = _thermOn ? _base.totalW : 0;
+  const _sub = _diversified + _lossKw;
+  const _mgn = getPlantMargin();
+  const _duty = _sub * (1 + _mgn / 100);
+  const _consPct = _sub > 0 ? _diversified / _sub * 100 : 0;
+  const _lossPct = _sub > 0 ? _lossKw / _sub * 100 : 0;
+  const _mass = systemWaterKg();
+  const _rHrs = recoveryHours(getRecoverFrom(), getFluidTemp(), getPlantOutput(), _ua, _mass);
+
+  let plantSection = '<h2>5. Plant Duty</h2>'
+    + '<p>Plant duty is built up from the connected consumer load, adjusted for diversity, plus the continuous distribution standing loss and a selection margin. '
+    + 'Consumer load sums the duty of circuits carrying a consumer pressure loss \u2014 that is, terminal equipment; distribution mains are excluded so no flow is counted twice.</p>'
+    + '<table class="rpt"><tbody>'
+    + '<tr><td>Connected consumer load (' + _cons.count + ' terminals)</td><td class="n">' + _cons.kw.toFixed(1) + ' kW</td></tr>'
+    + '<tr><td>Diversity / simultaneity applied</td><td class="n">' + _div + '%  \u2192  ' + _diversified.toFixed(1) + ' kW</td></tr>'
+    + '<tr><td>Distribution standing loss' + (_thermOn ? ' at \u0394T ' + _designDT.toFixed(0) + ' K' : '') + '</td><td class="n">' + (_thermOn ? '+ ' + _lossKw.toFixed(2) + ' kW' : 'not calculated') + '</td></tr>'
+    + '<tr class="sub"><td>Sub-total</td><td class="n">' + _sub.toFixed(1) + ' kW</td></tr>'
+    + '<tr><td>Selection margin (+' + _mgn + '%)</td><td class="n">+ ' + (_duty - _sub).toFixed(1) + ' kW</td></tr>'
+    + '<tr class="sub"><td><strong>Plant / CHP duty</strong></td><td class="n"><strong>' + _duty.toFixed(1) + ' kW</strong></td></tr>'
+    + '</tbody></table>'
+    + (_sub > 0 ? '<p>Load split: useful consumer duty <strong>' + _consPct.toFixed(1) + '%</strong>, parasitic distribution loss <strong>' + _lossPct.toFixed(1) + '%</strong>. '
+        + 'Note the standing loss is continuous whenever the system is hot, whereas the consumer load is intermittent \u2014 so its share of annual energy is higher than its share of duty.</p>' : '')
+    + (getPlantOutput() > 0 && _rHrs !== null
+        ? '<p><strong>Recovery:</strong> with ' + getPlantOutput().toFixed(0) + ' kW available, raising the ' + _mass.toFixed(0)
+          + ' kg of system contents from ' + getRecoverFrom().toFixed(0) + ' \u00b0C to ' + getFluidTemp().toFixed(0) + ' \u00b0C takes approximately <strong>'
+          + (_rHrs * 60 < 90 ? (_rHrs * 60).toFixed(0) + ' minutes' : _rHrs.toFixed(1) + ' hours') + '</strong>.</p>'
+        : '');
+
   const filledKg = totalPipeKg + totalWaterKg;
   const designKg = filledKg * (1 + upliftPct/100);
   const glyLabel = glyPct===0 ? 'water (LPHW / CHW)' : glyPct+'% propylene glycol';
@@ -3450,8 +3643,9 @@ function exportPDFReport() {
     + '<table class="rpt"><thead><tr><th>Circuit</th><th>Material</th><th class="n">Duty kW</th><th class="n">\u0394T K</th><th class="n">Flow l/s</th><th class="n">Size</th><th class="n">ID mm</th><th class="n">Vel m/s</th><th class="n">Pa/m</th><th class="n">Loss kPa</th><th class="n">Inst. kg/m</th><th class="n">Inst. kg</th><th>Status</th></tr></thead><tbody>'+(schedule||'<tr><td colspan="13">No circuits.</td></tr>')+'</tbody></table>'
     + '<p style="font-size:8.5pt;color:#5a6875">Installed weights include the '+upliftPct+'% uplift for lagging, cladding and bracketry, applied per line.</p>'
     + capacitySection
+    + plantSection
     + pumpSection
-    + '<h2>6. System Volume &amp; Weight</h2><p>Total system fluid volume <strong>'+totalWaterL.toFixed(0)+' litres</strong> (for expansion vessel sizing and dosing). Estimated installed pipework weight, incl. '+upliftPct+'% allowance for lagging, cladding and fittings, is <strong>'+designKg.toFixed(0)+' kg</strong> (for structural support assessment).</p>'
+    + '<h2>7. System Volume &amp; Weight</h2><p>Total system fluid volume <strong>'+totalWaterL.toFixed(0)+' litres</strong> (for expansion vessel sizing and dosing). Estimated installed pipework weight, incl. '+upliftPct+'% allowance for lagging, cladding and fittings, is <strong>'+designKg.toFixed(0)+' kg</strong> (for structural support assessment).</p>'
     + '<table class="rpt"><tbody><tr><td>Pipe metalwork (dry)</td><td class="n">'+totalPipeKg.toFixed(0)+' kg</td></tr><tr><td>Fluid contents</td><td class="n">'+totalWaterKg.toFixed(0)+' kg ('+totalWaterL.toFixed(0)+' L)</td></tr><tr><td>Filled pipework</td><td class="n">'+filledKg.toFixed(0)+' kg</td></tr><tr class="sub"><td>Design weight (incl. '+upliftPct+'% uplift)</td><td class="n">'+designKg.toFixed(0)+' kg</td></tr></tbody></table>'
     + thermalSection
     + '<div class="disc"><strong>Disclaimer:</strong> This calculation report is a design aid. Results are based on the inputs provided and standard reference data (BS EN 10255, BS EN 1057, EN 10217-7, CIBSE Guide C). All outputs must be verified by a competent engineer against project-specific requirements, manufacturers\u2019 certified data and applicable standards prior to construction.</div>'
@@ -3500,7 +3694,7 @@ function showToast(msg) {
    or open them on another device. Unlike browser storage they are
    never purged and are not tied to one machine.
    ============================================================ */
-const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor", "insType", "insLambda", "surfaceFinish", "fluidTemp", "ambientTemp", "dwellMins", "flangeFactor", "targetTemp"];
+const PROJECT_SETTING_IDS = ["projectRef", "engineer", "calcDate", "glycol", "rho", "cp", "defaultMaterial", "limitPd", "vMin", "vMax", "pipeCondition", "customRoughCarbon", "customRoughStainless", "llhVMax", "llhMaterial", "weightUplift", "plantPd", "valvePd", "strainerPd", "miscPd", "staticHead", "safetyFactor", "insType", "insLambda", "surfaceFinish", "fluidTemp", "ambientTemp", "dwellMins", "flangeFactor", "targetTemp", "diversityFactor", "plantMargin", "plantOutput", "recoverFrom"];
 
 function buildProjectSnapshot() {
   const settings = {};
@@ -3638,6 +3832,12 @@ function saveToLocalStorage() {
         flangeFactor: document.getElementById('flangeFactor').value,
         targetTemp: document.getElementById('targetTemp').value,
       },
+      plant: {
+        diversityFactor: document.getElementById('diversityFactor').value,
+        plantMargin: document.getElementById('plantMargin').value,
+        plantOutput: document.getElementById('plantOutput').value,
+        recoverFrom: document.getElementById('recoverFrom').value,
+      },
     };
     localStorage.setItem('adi_pipesizer_v2', JSON.stringify(state));
   } catch (e) {}
@@ -3675,6 +3875,13 @@ function loadFromLocalStorage() {
       if (t.flangeFactor) document.getElementById('flangeFactor').value = t.flangeFactor;
       if (t.targetTemp) document.getElementById('targetTemp').value = t.targetTemp;
       onThermalToggle();
+    }
+    if (s.plant) {
+      const pl = s.plant;
+      if (pl.diversityFactor) document.getElementById('diversityFactor').value = pl.diversityFactor;
+      if (pl.plantMargin !== undefined) document.getElementById('plantMargin').value = pl.plantMargin;
+      if (pl.plantOutput !== undefined) document.getElementById('plantOutput').value = pl.plantOutput;
+      if (pl.recoverFrom) document.getElementById('recoverFrom').value = pl.recoverFrom;
     }
     return true;
   } catch (e) { return false; }
