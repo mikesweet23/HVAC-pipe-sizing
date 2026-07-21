@@ -1,3 +1,5 @@
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2998,6 +3000,45 @@ function scheduledPipeLitres() {
    of the plant, and it is normally far less than design flow — which
    makes recovery slower than a full-flow calculation suggests.
    ============================================================ */
+/* ============================================================
+   RECOVERY SCENARIOS
+   One function used by both the screen and the report so the two can
+   never disagree. Evaluates a heat-up at a given circulating flow,
+   applying both physical limits:
+     1. the flow can only carry mdot * cp * dT_plant
+     2. the contents must pass the plant at least once
+   ============================================================ */
+function recoveryScenario(flowLps, nominalKw, ua, massKg, Tfrom, Tto) {
+  const rho = parseFloat(document.getElementById('rho').value) || 999;
+  const cp  = parseFloat(document.getElementById('cp').value) || 4.182;
+  const mdot = flowLps * rho / 1000;
+  const flowKw = mdot * cp * getPlantDT();
+  const isFlowLimited = flowKw > 0 && nominalKw > flowKw;
+  const effKw = isFlowLimited ? flowKw : nominalKw;
+
+  const litres = scheduledPipeLitres() + plantVolumeLitres();
+  const turnS = flowLps > 0 ? litres / flowLps : null;
+
+  const hrs = recoveryHours(Tfrom, Tto, effKw, ua, massKg);
+  const turnLimited = (hrs !== null && turnS !== null && hrs * 3600 < turnS);
+  const effectiveHrs = (hrs === null) ? null : (turnLimited ? turnS / 3600 : hrs);
+
+  return {
+    flowLps, nominalKw, flowKw, effKw, isFlowLimited,
+    turnS, turnMin: turnS === null ? null : turnS / 60,
+    energyHrs: hrs, turnLimited, hours: effectiveHrs,
+    limit: hrs === null ? 'unreachable' : (turnLimited ? 'circulation' : (isFlowLimited ? 'flow' : 'output')),
+  };
+}
+
+function fmtDuration(hrs) {
+  if (hrs === null || hrs === undefined) return '\u2014';
+  const mins = hrs * 60;
+  if (mins < 90) return mins.toFixed(0) + ' min';
+  if (hrs < 48)  return hrs.toFixed(1) + ' h';
+  return (hrs / 24).toFixed(1) + ' days';
+}
+
 function bypassFlowLps(c) {
   if (!c.isBypass) return 0;
   const r = calculateCircuit(c);
@@ -3326,66 +3367,80 @@ function renderPlantSummary() {
   const rFrom = getRecoverFrom(), rTo = getRecoverTo();
   const entered = getPlantOutput();
   const usingCalc = (entered === null);
-  const nominalKw = usingCalc ? duty : entered;   // blank field = use the duty just calculated
+  const nominalKw = usingCalc ? duty : entered;
   const outEl = document.getElementById('plantOutput');
   if (outEl) outEl.placeholder = duty.toFixed(0);
   const toEl = document.getElementById('recoverTo');
   if (toEl) toEl.placeholder = getFluidTemp().toFixed(0);
 
-  // Flow limits: the circulating flow can only carry mdot*cp*dT_plant, and the
-  // contents must physically pass the plant at least once.
-  const flowKw = flowLimitedKw();
-  const isFlowLimited = flowKw > 0 && nominalKw > flowKw;
-  const effKw = isFlowLimited ? flowKw : nominalKw;
-  const turnS = turnoverSeconds();
+  // Two scenarios: everything open at design flow, versus the reality of a
+  // cold start where only three-port and bypass circuits circulate.
+  const fullFlow = systemFlowLps();
+  const bypFlow  = systemBypassFlowLps();
+  const hasBypass = bypassCircuitCount() > 0;
 
-  const rHrs = recoveryHours(rFrom, rTo, effKw, ua, massKg);
-  const turnLimited = (rHrs !== null && turnS !== null && rHrs * 3600 < turnS);
+  const scFull = recoveryScenario(fullFlow, nominalKw, ua, massKg, rFrom, rTo);
+  const scByp  = hasBypass ? recoveryScenario(bypFlow, nominalKw, ua, massKg, rFrom, rTo) : null;
+
+  const limitWord = s => ({ output: 'plant output', flow: 'flow can\'t carry it',
+                            circulation: 'circulation', unreachable: 'never reaches target' })[s.limit];
 
   let recText;
-  if (effKw <= 0)                 recText = 'No plant duty yet \u2014 add circuits with a consumer load.';
-  else if (rTo <= rFrom)          recText = 'Recovery target must be above the starting temperature.';
-  else if (rHrs === null)         recText = '<span style="color:#c74418">' + effKw.toFixed(0) + ' kW cannot reach ' + rTo.toFixed(0) + ' \u00b0C \u2014 the standing loss matches the output before it gets there.</span>';
-  else {
-    const shown = turnLimited ? (turnS / 60) : (rHrs * 60);
-    recText = 'From <strong>' + rFrom.toFixed(0) + ' \u00b0C</strong> to <strong>' + rTo.toFixed(0) + ' \u00b0C</strong> with <strong>'
-            + effKw.toFixed(0) + ' kW</strong>'
-            + (isFlowLimited ? ' <span style="color:#c28a00;font-weight:700">(flow-limited)</span>'
-                             : (usingCalc ? ' <span style="color:var(--muted)">(calculated duty)</span>' : ' <span style="color:var(--muted)">(as entered)</span>'))
-            + ' takes <strong>'
-            + (shown < 90 ? shown.toFixed(0) + ' minutes' : (shown/60).toFixed(1) + ' hours')
-            + '</strong> for ' + massKg.toFixed(0) + ' kg of system contents.';
-    if (isFlowLimited) {
-      recText += '<div style="font-size:11.5px;color:#8a6100;margin-top:6px">'
-        + 'At ' + systemFlowLps().toFixed(2) + ' l/s with a ' + getPlantDT().toFixed(0) + ' K rise across the plant, the circulating flow can only carry <strong>'
-        + flowKw.toFixed(0) + ' kW</strong> \u2014 less than the ' + nominalKw.toFixed(0) + ' kW available. '
-        + 'Raise the flow or the plant \u0394T to use the full output.</div>';
-    }
-    if (turnLimited) {
-      recText += '<div style="font-size:11.5px;color:#8a6100;margin-top:6px">'
-        + 'Circulation-limited: one complete pass of the contents past the plant takes <strong>' + (turnS/60).toFixed(1) + ' minutes</strong>, '
-        + 'so heat cannot reach all the water faster than that. The energy balance alone would give ' + (rHrs*60).toFixed(1) + ' minutes.</div>';
-    }
-    if (usingCalc && !isFlowLimited) {
-      recText += '<div style="font-size:11px;color:var(--muted);margin-top:4px">Enter your actual installed plant output above to override this.</div>';
-    }
-  }
-  if (turnS !== null && effKw > 0) {
-    const byp = startupFlowIsBypass();
-    recText += '<div style="font-size:11px;color:var(--muted);margin-top:6px">'
-      + (byp
-          ? 'Start-up flow <strong>' + startupFlowLps().toFixed(2) + ' l/s</strong> through ' + bypassCircuitCount() + ' bypass circuit'
-            + (bypassCircuitCount() === 1 ? '' : 's') + ' <span style="color:var(--muted)">(design flow ' + systemFlowLps().toFixed(2) + ' l/s)</span>'
-          : 'System flow ' + systemFlowLps().toFixed(2) + ' l/s')
-      + ' \u00b7 one turnover ' + (turnS/60).toFixed(1) + ' min \u00b7 '
-      + 'flow can carry ' + flowKw.toFixed(0) + ' kW at \u0394T ' + getPlantDT().toFixed(0) + ' K</div>';
-    if (byp) {
-      recText += '<div style="font-size:11.5px;color:#8a6100;margin-top:5px">'
-        + 'Recovery is based on <strong>bypass flow only</strong>. From a cold start the two-port consumer valves are shut, '
-        + 'so only the three-port and bypass circuits circulate \u2014 which is why this takes longer than a full-flow figure suggests.</div>';
-    }
-  }
+  if (nominalKw <= 0) {
+    recText = 'No plant duty yet \u2014 add circuits with a consumer load.';
+  } else if (rTo <= rFrom) {
+    recText = 'Recovery target must be above the starting temperature.';
+  } else if (!hasBypass) {
+    recText = (scFull.hours === null)
+      ? '<span style="color:#c74418">' + scFull.effKw.toFixed(0) + ' kW cannot reach ' + rTo.toFixed(0) + ' \u00b0C \u2014 the standing loss matches the output before it gets there.</span>'
+      : 'From <strong>' + rFrom.toFixed(0) + ' \u00b0C</strong> to <strong>' + rTo.toFixed(0) + ' \u00b0C</strong> with <strong>'
+        + scFull.effKw.toFixed(0) + ' kW</strong>' + (scFull.isFlowLimited ? ' <span style="color:#c28a00;font-weight:700">(flow-limited)</span>' : '')
+        + ' takes <strong>' + fmtDuration(scFull.hours) + '</strong> for ' + massKg.toFixed(0) + ' kg of system contents.'
+        + '<div style="font-size:11px;color:var(--muted);margin-top:5px">No circuit is marked as a bypass, so this assumes every consumer stays open at design flow. '
+        + 'Tick <strong>Bypass</strong> on the three-port circuits to see the realistic cold-start figure.</div>';
+  } else {
+    // --- side by side ---
+    const cell = 'padding:9px 11px;border:1px solid var(--line-strong)';
+    const head = 'padding:7px 11px;font-size:10px;letter-spacing:1px;text-transform:uppercase;background:var(--brand-blue-dark);color:var(--white);text-align:left';
+    recText =
+        '<div style="font-size:12.5px;margin-bottom:9px">Raising <strong>' + massKg.toFixed(0) + ' kg</strong> of system contents from <strong>'
+      + rFrom.toFixed(0) + ' \u00b0C</strong> to <strong>' + rTo.toFixed(0) + ' \u00b0C</strong> with <strong>' + nominalKw.toFixed(0) + ' kW</strong> available'
+      + (usingCalc ? ' <span style="color:var(--muted)">(calculated duty)</span>' : '') + ':</div>'
+      + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:430px">'
+      +   '<thead><tr>'
+      +     '<th style="' + head + '"></th>'
+      +     '<th style="' + head + ';text-align:right">A \u00b7 All consumers open</th>'
+      +     '<th style="' + head + ';text-align:right;background:var(--brand-blue-deep)">B \u00b7 Cold start, bypass only</th>'
+      +   '</tr></thead><tbody>'
+      +   '<tr><td style="' + cell + '">Circulating flow</td>'
+      +     '<td style="' + cell + ';text-align:right">' + scFull.flowLps.toFixed(2) + ' l/s</td>'
+      +     '<td style="' + cell + ';text-align:right;font-weight:700">' + scByp.flowLps.toFixed(2) + ' l/s</td></tr>'
+      +   '<tr><td style="' + cell + '">Heat the flow can carry</td>'
+      +     '<td style="' + cell + ';text-align:right">' + scFull.flowKw.toFixed(0) + ' kW</td>'
+      +     '<td style="' + cell + ';text-align:right;font-weight:700">' + scByp.flowKw.toFixed(0) + ' kW</td></tr>'
+      +   '<tr><td style="' + cell + '">Effective plant output</td>'
+      +     '<td style="' + cell + ';text-align:right">' + scFull.effKw.toFixed(0) + ' kW</td>'
+      +     '<td style="' + cell + ';text-align:right;font-weight:700">' + scByp.effKw.toFixed(0) + ' kW</td></tr>'
+      +   '<tr><td style="' + cell + '">One turnover</td>'
+      +     '<td style="' + cell + ';text-align:right">' + (scFull.turnMin === null ? '\u2014' : scFull.turnMin.toFixed(1) + ' min') + '</td>'
+      +     '<td style="' + cell + ';text-align:right;font-weight:700">' + (scByp.turnMin === null ? '\u2014' : scByp.turnMin.toFixed(1) + ' min') + '</td></tr>'
+      +   '<tr style="background:rgba(122,209,228,0.15)"><td style="' + cell + ';font-weight:800">Recovery time</td>'
+      +     '<td style="' + cell + ';text-align:right;font-weight:800;font-size:15px">' + fmtDuration(scFull.hours) + '</td>'
+      +     '<td style="' + cell + ';text-align:right;font-weight:800;font-size:15px;color:var(--brand-blue-deep)">' + fmtDuration(scByp.hours) + '</td></tr>'
+      +   '<tr><td style="' + cell + ';font-size:11px;color:var(--muted)">Limited by</td>'
+      +     '<td style="' + cell + ';text-align:right;font-size:11px;color:var(--muted)">' + limitWord(scFull) + '</td>'
+      +     '<td style="' + cell + ';text-align:right;font-size:11px;color:var(--muted)">' + limitWord(scByp) + '</td></tr>'
+      +   '</tbody></table></div>';
 
+    if (scFull.hours !== null && scByp.hours !== null && scFull.hours > 0) {
+      const factor = scByp.hours / scFull.hours;
+      recText += '<div style="background:#fff8e6;border-left:3px solid #c28a00;padding:10px 13px;margin-top:10px;font-size:12.5px;line-height:1.55">'
+        + '<strong style="color:#8a6100">Use column B.</strong> From a cold start the two-port valves on the consumers are shut, so the only circulation is through the '
+        + bypassCircuitCount() + ' circuit' + (bypassCircuitCount() === 1 ? '' : 's') + ' marked as bypass or three-port. '
+        + 'That reduced flow makes recovery <strong>' + (factor >= 1 ? factor.toFixed(1) + '\u00d7 longer' : (1/factor).toFixed(1) + '\u00d7 shorter')
+        + '</strong> than the all-open figure. Column A is shown only for comparison \u2014 it is not achievable until the consumers open.</div>';
+    }
+  }
   el.innerHTML =
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
     +   '<div style="' + tileCss + '"><div style="' + labCss + '">Consumer Load</div><div style="' + valCss + '">' + cons.kw.toFixed(1) + '</div><div style="font-size:10px;color:var(--muted)">kW \u00b7 ' + cons.count + ' terminals</div></div>'
@@ -4449,7 +4504,7 @@ function exportPDFReport() {
 
     // --- Dwell decay ---
     const Ttgt2 = getTargetTemp();
-    const T0d = getFluidTemp(), Tambd = getAmbientTemp();
+    const T0d = shutdownStartTemp(), Tambd = getAmbientTemp();   // mixed start, matching the screen
     const sysD = systemDecay();
     const HRS = [1,2,4,6,8,12,18,24];
     let sysRows = '';
@@ -4474,6 +4529,7 @@ function exportPDFReport() {
 
     thermalSection += '<h3 style="font-size:11px;color:#0b2a38;margin:16px 0 6px">Dwell decay \u2014 system off, no heat input</h3>'
       + '<p>With no heat input the contents cool exponentially: T = T_amb + (T\u2080 \u2212 T_amb) \u00d7 exp(\u2212t/\u03c4), where \u03c4 = m\u00b7c\u209a/UA. '
+      + 'Starting condition: ' + shutdownScenarioNote().replace(/<[^>]+>/g, '') + ' '
       + 'Figures below the '+Ttgt2.toFixed(0)+' \u00b0C target are shown in red. Treated as one mixed volume ('
       + sysD.mass.toFixed(0)+' kg, UA '+sysD.ua.toFixed(1)+' W/K) the time constant is <strong>'+(sysD.tau_s/3600).toFixed(1)+' hours</strong>'
       + ', reaching '+Ttgt2.toFixed(0)+' \u00b0C after <strong>'+(sysTTT===null?'never':sysTTT.toFixed(1)+' hours')+'</strong>.</p>'
@@ -4505,11 +4561,11 @@ function exportPDFReport() {
   const _mass = systemWaterKg();
   const _entered = getPlantOutput();
   const _plantKw = (_entered === null) ? _duty : _entered;
-  const _flowKw = flowLimitedKw();
-  const _effKw = (_flowKw > 0 && _plantKw > _flowKw) ? _flowKw : _plantKw;
-  const _turnS = turnoverSeconds();
-  const _rHrs = recoveryHours(getRecoverFrom(), getRecoverTo(), _effKw, _ua, _mass);
-  const _turnLim = (_rHrs !== null && _turnS !== null && _rHrs*3600 < _turnS);
+  const _fullFlow = systemFlowLps();
+  const _bypFlow  = systemBypassFlowLps();
+  const _hasByp   = bypassCircuitCount() > 0;
+  const _scFull = recoveryScenario(_fullFlow, _plantKw, _ua, _mass, getRecoverFrom(), getRecoverTo());
+  const _scByp  = _hasByp ? recoveryScenario(_bypFlow, _plantKw, _ua, _mass, getRecoverFrom(), getRecoverTo()) : null;
 
   let plantSection = '<h2>5. Plant Duty</h2>'
     + '<p>Plant duty is built up from the connected consumer load, adjusted for diversity, plus the continuous distribution standing loss and a selection margin. '
@@ -4524,16 +4580,40 @@ function exportPDFReport() {
     + '</tbody></table>'
     + (_sub > 0 ? '<p>Load split: useful consumer duty <strong>' + _consPct.toFixed(1) + '%</strong>, parasitic distribution loss <strong>' + _lossPct.toFixed(1) + '%</strong>. '
         + 'Note the standing loss is continuous whenever the system is hot, whereas the consumer load is intermittent \u2014 so its share of annual energy is higher than its share of duty.</p>' : '')
-    + (_effKw > 0 && _rHrs !== null
-        ? '<p><strong>Recovery:</strong> with ' + _effKw.toFixed(0) + ' kW'
-          + ((_flowKw > 0 && _plantKw > _flowKw) ? ' (flow-limited from ' + _plantKw.toFixed(0) + ' kW)' : '')
-          + ', raising the ' + _mass.toFixed(0)
-          + ' kg of system contents from ' + getRecoverFrom().toFixed(0) + ' \u00b0C to ' + getRecoverTo().toFixed(0) + ' \u00b0C takes approximately <strong>'
-          + (_turnLim ? (_turnS/60).toFixed(1) + ' minutes' : (_rHrs * 60 < 90 ? (_rHrs * 60).toFixed(0) + ' minutes' : _rHrs.toFixed(1) + ' hours')) + '</strong>. '
-          + 'At ' + systemFlowLps().toFixed(2) + ' l/s the circulating flow can carry ' + _flowKw.toFixed(0) + ' kW at a ' + getPlantDT().toFixed(0) + ' K rise across the plant, '
-          + 'and one complete pass of the contents takes ' + (_turnS === null ? 'n/a' : (_turnS/60).toFixed(1) + ' minutes') + '.'
-          + (_turnLim ? ' Recovery is circulation-limited rather than output-limited.' : '') + '</p>'
-        : '');
+    + (function () {
+        if (_plantKw <= 0) return '';
+        const dur = h => (h === null ? 'not reached' : fmtDuration(h));
+        if (!_hasByp) {
+          return '<p><strong>Recovery.</strong> With ' + _scFull.effKw.toFixed(0) + ' kW'
+            + (_scFull.isFlowLimited ? ' (flow-limited from ' + _plantKw.toFixed(0) + ' kW)' : '')
+            + ', raising the ' + _mass.toFixed(0) + ' kg of system contents from ' + getRecoverFrom().toFixed(0)
+            + ' \u00b0C to ' + getRecoverTo().toFixed(0) + ' \u00b0C takes approximately <strong>' + dur(_scFull.hours) + '</strong>. '
+            + 'At ' + _scFull.flowLps.toFixed(2) + ' l/s the circulating flow can carry ' + _scFull.flowKw.toFixed(0)
+            + ' kW at a ' + getPlantDT().toFixed(0) + ' K rise across the plant, and one complete pass of the contents takes '
+            + (_scFull.turnMin === null ? 'n/a' : _scFull.turnMin.toFixed(1) + ' minutes') + '. '
+            + 'No circuit is identified as a bypass, so this figure assumes every consumer remains open at design flow.</p>';
+        }
+        const factor = (_scFull.hours && _scByp.hours) ? (_scByp.hours / _scFull.hours) : null;
+        return '<h3 style="font-size:11px;color:#0b2a38;margin:14px 0 6px">Recovery \u2014 all consumers open compared with cold start</h3>'
+          + '<p>Recovery depends on the flow actually circulating, not only on plant capacity. From a cold start the two-port control valves '
+          + 'on the consumers are shut, so the only circulation is through the ' + bypassCircuitCount() + ' circuit'
+          + (bypassCircuitCount() === 1 ? '' : 's') + ' identified as three-port or bypass. Both cases are shown below; '
+          + '<strong>scenario B is the achievable figure</strong> and scenario A is given for comparison only.</p>'
+          + '<table class="rpt"><thead><tr><th></th>'
+          + '<th class="n">A \u00b7 All consumers open</th><th class="n">B \u00b7 Cold start, bypass only</th></tr></thead><tbody>'
+          + '<tr><td>Circulating flow</td><td class="n">' + _scFull.flowLps.toFixed(2) + ' l/s</td><td class="n">' + _scByp.flowLps.toFixed(2) + ' l/s</td></tr>'
+          + '<tr><td>Heat the flow can carry at \u0394T ' + getPlantDT().toFixed(0) + ' K</td><td class="n">' + _scFull.flowKw.toFixed(0) + ' kW</td><td class="n">' + _scByp.flowKw.toFixed(0) + ' kW</td></tr>'
+          + '<tr><td>Effective plant output</td><td class="n">' + _scFull.effKw.toFixed(0) + ' kW</td><td class="n">' + _scByp.effKw.toFixed(0) + ' kW</td></tr>'
+          + '<tr><td>One complete turnover</td><td class="n">' + (_scFull.turnMin === null ? '\u2014' : _scFull.turnMin.toFixed(1) + ' min') + '</td><td class="n">' + (_scByp.turnMin === null ? '\u2014' : _scByp.turnMin.toFixed(1) + ' min') + '</td></tr>'
+          + '<tr class="sub"><td><strong>Recovery time, ' + getRecoverFrom().toFixed(0) + ' \u2192 ' + getRecoverTo().toFixed(0) + ' \u00b0C</strong></td>'
+          + '<td class="n"><strong>' + dur(_scFull.hours) + '</strong></td><td class="n"><strong>' + dur(_scByp.hours) + '</strong></td></tr>'
+          + '</tbody></table>'
+          + (factor ? '<p>Restricting circulation to the bypass circuits makes recovery <strong>'
+              + (factor >= 1 ? factor.toFixed(1) + ' times longer' : (1/factor).toFixed(1) + ' times shorter')
+              + '</strong> than the all-open case. Scenario A is not achievable until the consumer valves open.</p>' : '')
+          + '<p style="font-size:8.5pt;color:#5a6875">Based on ' + _mass.toFixed(0) + ' kg of system contents, including '
+          + plantVolumeLitres().toFixed(0) + ' litres held in plant items. Bypass flows are as entered against each circuit.</p>';
+      })();
 
   const filledKg = totalPipeKg + totalWaterKg;
   const designKg = filledKg * (1 + upliftPct/100);
